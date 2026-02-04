@@ -1,3 +1,30 @@
+subdigger (1.2.6-1) unstable; urgency=high
+
+  * CRITICAL: Implemented hard wall-clock timeout for DNS resolutions
+  * Each dns_resolve_full() call has a hard limit of (timeout * 2) seconds
+  * Timeout checks before and after each DNS query type
+  * Forcibly cancels all pending queries if hard timeout exceeded
+  * wait_for_query() uses smaller intervals (50ms/250ms) for faster response
+  * Maximum iteration limit prevents infinite loops
+  * Prevents threads from hanging indefinitely on stuck DNS queries
+  * Ensures all worker threads make progress even with problematic servers
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 18:00:00 +0000
+
+subdigger (1.2.5-1) unstable; urgency=high
+
+  * FEATURE: Automatic DNS server health monitoring and recovery
+  * Tracks ServFail errors from DNS servers
+  * Automatically disables DNS server after 3 ServFail responses
+  * Threads using disabled server pause and wait for recovery
+  * Disabled servers automatically re-enabled after 10 second cooldown
+  * Statistics now show ServFail count and [DISABLED] status
+  * Monitoring runs every 10 seconds (instead of 60)
+  * Prevents thread hangs from broken DNS servers
+  * Automatic failover improves reliability
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 17:45:00 +0000
+
 subdigger (1.2.4-1) unstable; urgency=high
 
   * CHANGED: Ctrl+C now immediately terminates process (no graceful shutdown)

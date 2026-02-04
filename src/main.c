@@ -8,7 +8,7 @@
 #include <signal.h>
 #include "../include/subdigger.h"
 
-#define VERSION "1.2.4"
+#define VERSION "1.2.6"
 
 static subdigger_ctx_t *global_ctx = NULL;
 

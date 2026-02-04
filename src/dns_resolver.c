@@ -13,11 +13,18 @@
 typedef struct {
     bool completed;
     bool has_result;
+    bool servfail;
     char result[MAX_DOMAIN_LEN];
 } dns_query_result_t;
 
 static void dns_callback_a(void *arg, int status, int timeouts __attribute__((unused)), struct hostent *host) {
     dns_query_result_t *result = (dns_query_result_t *)arg;
+
+    if (status == ARES_ESERVFAIL) {
+        result->servfail = true;
+        result->completed = true;
+        return;
+    }
 
     if (status == ARES_SUCCESS && host && host->h_addr_list[0]) {
         char ip[MAX_IP_LEN];
@@ -114,10 +121,14 @@ static void wait_for_query(ares_channel channel, dns_query_result_t *result, int
     fd_set read_fds, write_fds;
     int nfds;
     time_t start_time = time(NULL);
+    int iterations = 0;
+    int max_iterations = timeout_sec * 4;
 
-    while (!result->completed && !shutdown_requested) {
+    while (!result->completed && !shutdown_requested && iterations < max_iterations) {
+        iterations++;
+
         time_t now = time(NULL);
-        if (now - start_time > timeout_sec) {
+        if (now - start_time >= timeout_sec) {
             break;
         }
 
@@ -127,11 +138,11 @@ static void wait_for_query(ares_channel channel, dns_query_result_t *result, int
 
         if (nfds == 0) {
             tv.tv_sec = 0;
-            tv.tv_usec = 100000;
+            tv.tv_usec = 50000;
             tvp = &tv;
         } else {
             tv.tv_sec = 0;
-            tv.tv_usec = 500000;
+            tv.tv_usec = 250000;
             tvp = &tv;
             select(nfds, &read_fds, &write_fds, NULL, tvp);
         }
@@ -206,9 +217,11 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
     dns_server_stats_t *server = &ctx->dns_servers[dns_ctx->server_idx];
     struct timeval start_time, end_time;
     gettimeofday(&start_time, NULL);
+    time_t wall_start = time(NULL);
 
     ares_channel channel = (ares_channel)dns_ctx->channel;
     int timeout = ctx->config ? ctx->config->timeout : DEFAULT_TIMEOUT;
+    int hard_timeout = timeout * 2;
 
     safe_strncpy(result->subdomain, subdomain, sizeof(result->subdomain));
     safe_strncpy(result->a_record, "N/A", sizeof(result->a_record));
@@ -221,14 +234,58 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
 
     extract_tld(subdomain, result->tld, sizeof(result->tld));
 
-    dns_query_result_t a_result = {false, false, ""};
+    if (time(NULL) - wall_start >= hard_timeout) {
+        ares_cancel(channel);
+        return false;
+    }
+
+    dns_query_result_t a_result = {false, false, false, ""};
     ares_gethostbyname(channel, subdomain, AF_INET, dns_callback_a, &a_result);
     wait_for_query(channel, &a_result, timeout);
 
+    if (time(NULL) - wall_start >= hard_timeout) {
+        ares_cancel(channel);
+        return false;
+    }
+
+    if (a_result.servfail) {
+        __sync_add_and_fetch(&server->servfails, 1);
+        if (server->servfails >= 3 && !server->disabled) {
+            server->disabled = true;
+            server->disabled_time = time(NULL);
+            if (!global_quiet_mode) {
+                sd_warn("DNS server %s disabled due to ServFail errors (will retry in 10s)", server->server);
+            }
+        }
+        return false;
+    }
+
     if (!a_result.has_result) {
-        dns_query_result_t a6_result = {false, false, ""};
+        if (time(NULL) - wall_start >= hard_timeout) {
+            ares_cancel(channel);
+            return false;
+        }
+
+        dns_query_result_t a6_result = {false, false, false, ""};
         ares_gethostbyname(channel, subdomain, AF_INET6, dns_callback_a, &a6_result);
         wait_for_query(channel, &a6_result, timeout);
+
+        if (time(NULL) - wall_start >= hard_timeout) {
+            ares_cancel(channel);
+            return false;
+        }
+
+        if (a6_result.servfail) {
+            __sync_add_and_fetch(&server->servfails, 1);
+            if (server->servfails >= 3 && !server->disabled) {
+                server->disabled = true;
+                server->disabled_time = time(NULL);
+                if (!global_quiet_mode) {
+                    sd_warn("DNS server %s disabled due to ServFail errors (will retry in 10s)", server->server);
+                }
+            }
+            return false;
+        }
 
         if (a6_result.has_result) {
             safe_strncpy(result->a_record, a6_result.result, sizeof(result->a_record));
@@ -240,14 +297,24 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
 
     bool has_a_record = a_result.has_result;
 
-    dns_query_result_t cname_result = {false, false, ""};
+    if (time(NULL) - wall_start >= hard_timeout) {
+        ares_cancel(channel);
+        return has_a_record;
+    }
+
+    dns_query_result_t cname_result = {false, false, false, ""};
     ares_query(channel, subdomain, ns_c_in, ns_t_cname, dns_callback_cname, &cname_result);
     wait_for_query(channel, &cname_result, timeout);
     if (cname_result.has_result) {
         safe_strncpy(result->cname_record, cname_result.result, sizeof(result->cname_record));
     }
 
-    dns_query_result_t ns_result = {false, false, ""};
+    if (time(NULL) - wall_start >= hard_timeout) {
+        ares_cancel(channel);
+        return has_a_record;
+    }
+
+    dns_query_result_t ns_result = {false, false, false, ""};
     ares_query(channel, subdomain, ns_c_in, ns_t_ns, dns_callback_ns, &ns_result);
     wait_for_query(channel, &ns_result, timeout);
     if (ns_result.has_result) {
@@ -262,18 +329,20 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
         pthread_mutex_unlock(&ctx->geoip_mutex);
     }
 
-    if (has_a_record) {
-        dns_query_result_t mx_result = {false, false, ""};
+    if (has_a_record && (time(NULL) - wall_start < hard_timeout)) {
+        dns_query_result_t mx_result = {false, false, false, ""};
         ares_query(channel, subdomain, ns_c_in, ns_t_mx, dns_callback_mx, &mx_result);
         wait_for_query(channel, &mx_result, timeout);
         if (mx_result.has_result) {
             safe_strncpy(result->mx_record, mx_result.result, sizeof(result->mx_record));
         }
 
-        dns_query_result_t txt_result = {false, false, ""};
-        ares_query(channel, subdomain, ns_c_in, ns_t_txt, dns_callback_txt, &txt_result);
-        wait_for_query(channel, &txt_result, timeout);
-        result->has_txt = txt_result.has_result;
+        if (time(NULL) - wall_start < hard_timeout) {
+            dns_query_result_t txt_result = {false, false, false, ""};
+            ares_query(channel, subdomain, ns_c_in, ns_t_txt, dns_callback_txt, &txt_result);
+            wait_for_query(channel, &txt_result, timeout);
+            result->has_txt = txt_result.has_result;
+        }
     }
 
     gettimeofday(&end_time, NULL);
@@ -292,9 +361,10 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
 
 static void *dns_stats_thread(void *arg) {
     subdigger_ctx_t *ctx = (subdigger_ctx_t *)arg;
+    int loop_counter = 0;
 
     while (ctx->stats_active && !shutdown_requested) {
-        for (int i = 0; i < 60 && ctx->stats_active && !shutdown_requested; i++) {
+        for (int i = 0; i < 10 && ctx->stats_active && !shutdown_requested; i++) {
             sleep(1);
         }
 
@@ -302,7 +372,23 @@ static void *dns_stats_thread(void *arg) {
             break;
         }
 
-        if (!global_quiet_mode) {
+        loop_counter++;
+        time_t now = time(NULL);
+
+        for (size_t i = 0; i < ctx->dns_server_count; i++) {
+            dns_server_stats_t *s = &ctx->dns_servers[i];
+
+            if (s->disabled && (now - s->disabled_time >= 10)) {
+                s->disabled = false;
+                s->servfails = 0;
+                if (!global_quiet_mode) {
+                    sd_info("DNS server %s re-enabled after cooldown", s->server);
+                }
+            }
+        }
+
+        if (loop_counter >= 6 && !global_quiet_mode) {
+            loop_counter = 0;
             fprintf(stderr, "\n========== DNS Server Statistics ==========\n");
             for (size_t i = 0; i < ctx->dns_server_count; i++) {
                 dns_server_stats_t *s = &ctx->dns_servers[i];
@@ -311,15 +397,18 @@ static void *dns_stats_thread(void *arg) {
 
                 size_t queries = s->queries;
                 size_t successes = s->successes;
+                size_t servfails = s->servfails;
                 size_t total_time = s->total_time_ms;
                 size_t active = s->active_threads;
+                bool disabled = s->disabled;
 
                 double qps = (double)queries / elapsed;
                 double avg_ms = queries > 0 ? (double)total_time / queries : 0;
                 double success_rate = queries > 0 ? (double)successes * 100 / queries : 0;
 
-                fprintf(stderr, "[%s] %.1f q/s | %.0f ms avg | %.1f%% success | %zu threads | %zu queries\n",
-                       s->server, qps, avg_ms, success_rate, active, queries);
+                const char *status = disabled ? " [DISABLED]" : "";
+                fprintf(stderr, "[%s] %.1f q/s | %.0f ms avg | %.1f%% success | %zu servfail | %zu threads | %zu queries%s\n",
+                       s->server, qps, avg_ms, success_rate, servfails, active, queries, status);
             }
             fprintf(stderr, "===========================================\n\n");
         }

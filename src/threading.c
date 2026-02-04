@@ -203,6 +203,11 @@ static void *worker_thread(void *arg) {
     dns_ctx.channel = channel;
 
     while (!shutdown_requested) {
+        if (server_idx < ctx->dns_server_count && ctx->dns_servers[server_idx].disabled) {
+            usleep(100000);
+            continue;
+        }
+
         task_item_t item;
         if (!task_queue_pop(ctx->task_queue, &item)) {
             break;
