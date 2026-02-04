@@ -52,9 +52,20 @@ char **api_shodan_query(const char *domain, const char *api_key, size_t *count) 
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
 
     CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
     if (res != CURLE_OK) {
-        sd_warn("Shodan API query failed: %s", curl_easy_strerror(res));
+        sd_warn("Shodan API query failed: %s (HTTP %ld)", curl_easy_strerror(res), http_code);
+        curl_easy_cleanup(curl);
+        if (response.data) {
+            free(response.data);
+        }
+        return NULL;
+    }
+
+    if (http_code != 200) {
+        sd_warn("Shodan API returned HTTP %ld (rate limit or invalid key?)", http_code);
         curl_easy_cleanup(curl);
         if (response.data) {
             free(response.data);
@@ -145,12 +156,22 @@ char **api_virustotal_query(const char *domain, const char *api_key, size_t *cou
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
 
     CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        sd_warn("VirusTotal API query failed: %s", curl_easy_strerror(res));
+        sd_warn("VirusTotal API query failed: %s (HTTP %ld)", curl_easy_strerror(res), http_code);
+        if (response.data) {
+            free(response.data);
+        }
+        return NULL;
+    }
+
+    if (http_code != 200) {
+        sd_warn("VirusTotal API returned HTTP %ld (rate limit or invalid key?)", http_code);
         if (response.data) {
             free(response.data);
         }

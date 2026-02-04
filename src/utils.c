@@ -4,7 +4,11 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <time.h>
+#include <signal.h>
 #include "../include/subdigger.h"
+
+bool global_quiet_mode = false;
+volatile sig_atomic_t shutdown_requested = 0;
 
 void sd_error(const char *fmt, ...) {
     va_list args;
@@ -35,6 +39,10 @@ void sd_warn(const char *fmt, ...) {
 }
 
 void sd_info(const char *fmt, ...) {
+    if (global_quiet_mode) {
+        return;
+    }
+
     va_list args;
     time_t now = time(NULL);
     struct tm *tm_info = localtime(&now);
@@ -46,6 +54,19 @@ void sd_info(const char *fmt, ...) {
     vfprintf(stderr, fmt, args);
     va_end(args);
     fprintf(stderr, "\n");
+}
+
+void sd_progress(const char *fmt, ...) {
+    if (global_quiet_mode) {
+        return;
+    }
+
+    va_list args;
+    fprintf(stderr, "\r\033[K");
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    fflush(stderr);
 }
 
 bool validate_domain(const char *domain) {

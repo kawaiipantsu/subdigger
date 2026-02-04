@@ -1,1 +1,1 @@
-wordlists/common-subdomains.txt usr/share/subdigger/wordlists/
+wordlists/*.txt usr/share/subdigger/wordlists/

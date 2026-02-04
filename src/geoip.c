@@ -69,6 +69,8 @@ void geoip_lookup(subdigger_ctx_t *ctx, const char *ip, char *country_code) {
         return;
     }
 
+    pthread_mutex_lock(&ctx->geoip_mutex);
+
     MMDB_s *mmdb = (MMDB_s *)ctx->geoip_db;
 
     int gai_error, mmdb_error;
@@ -76,6 +78,7 @@ void geoip_lookup(subdigger_ctx_t *ctx, const char *ip, char *country_code) {
 
     if (gai_error != 0 || mmdb_error != MMDB_SUCCESS || !result.found_entry) {
         safe_strncpy(country_code, "N/A", 3);
+        pthread_mutex_unlock(&ctx->geoip_mutex);
         return;
     }
 
@@ -84,10 +87,13 @@ void geoip_lookup(subdigger_ctx_t *ctx, const char *ip, char *country_code) {
 
     if (status != MMDB_SUCCESS || !entry_data.has_data || entry_data.type != MMDB_DATA_TYPE_UTF8_STRING) {
         safe_strncpy(country_code, "N/A", 3);
+        pthread_mutex_unlock(&ctx->geoip_mutex);
         return;
     }
 
     size_t copy_len = entry_data.data_size < 2 ? entry_data.data_size : 2;
     memcpy(country_code, entry_data.utf8_string, copy_len);
     country_code[copy_len] = '\0';
+
+    pthread_mutex_unlock(&ctx->geoip_mutex);
 }

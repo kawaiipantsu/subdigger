@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <pwd.h>
 #include "../include/subdigger.h"
 
 char **wordlist_load(const char *path, size_t *count) {
@@ -34,18 +38,6 @@ char **wordlist_load(const char *path, size_t *count) {
         }
 
         if (strlen(trimmed) > 63) {
-            continue;
-        }
-
-        bool is_duplicate = false;
-        for (size_t i = 0; i < *count; i++) {
-            if (strcmp(wordlist[i], trimmed) == 0) {
-                is_duplicate = true;
-                break;
-            }
-        }
-
-        if (is_duplicate) {
             continue;
         }
 
@@ -102,4 +94,208 @@ void wordlist_free(char **wordlist, size_t count) {
     }
 
     free(wordlist);
+}
+
+static bool ends_with_txt(const char *filename) {
+    size_t len = strlen(filename);
+    if (len < 4) {
+        return false;
+    }
+    return strcmp(filename + len - 4, ".txt") == 0;
+}
+
+char **wordlist_discover_auto(size_t *count) {
+    if (!count) {
+        return NULL;
+    }
+
+    *count = 0;
+    char **paths = NULL;
+    size_t path_count = 0;
+
+    const char *search_dirs[] = {
+        "/usr/share/subdigger/wordlists",
+        NULL,
+        NULL
+    };
+
+    struct passwd *pw = getpwuid(getuid());
+    char user_dir[1024];
+    if (pw) {
+        snprintf(user_dir, sizeof(user_dir), "%s/.subdigger/wordlists", pw->pw_dir);
+        search_dirs[1] = user_dir;
+    }
+
+    for (int i = 0; search_dirs[i] != NULL; i++) {
+        DIR *dir = opendir(search_dirs[i]);
+        if (!dir) {
+            continue;
+        }
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_type != DT_REG && entry->d_type != DT_UNKNOWN) {
+                continue;
+            }
+
+            if (!ends_with_txt(entry->d_name)) {
+                continue;
+            }
+
+            char full_path[2048];
+            snprintf(full_path, sizeof(full_path), "%s/%s", search_dirs[i], entry->d_name);
+
+            struct stat st;
+            if (stat(full_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+                continue;
+            }
+
+            paths = realloc(paths, (path_count + 1) * sizeof(char *));
+            if (!paths) {
+                closedir(dir);
+                return NULL;
+            }
+
+            paths[path_count] = strdup(full_path);
+            path_count++;
+
+            sd_info("Found wordlist: %s", entry->d_name);
+        }
+
+        closedir(dir);
+    }
+
+    if (path_count == 0) {
+        sd_warn("No .txt wordlist files found in search directories");
+        return NULL;
+    }
+
+    sd_info("Discovered %zu wordlist file(s)", path_count);
+
+    char **combined = wordlist_load_multiple(paths, path_count, count);
+
+    for (size_t i = 0; i < path_count; i++) {
+        free(paths[i]);
+    }
+    free(paths);
+
+    return combined;
+}
+
+char **wordlist_load_multiple(char **paths, size_t path_count, size_t *total_count) {
+    if (!paths || !total_count || path_count == 0) {
+        return NULL;
+    }
+
+    *total_count = 0;
+    char **combined = malloc(1000 * sizeof(char *));
+    if (!combined) {
+        return NULL;
+    }
+
+    size_t capacity = 1000;
+    size_t unique_count = 0;
+
+    for (size_t p = 0; p < path_count; p++) {
+        size_t list_count = 0;
+        char **wordlist = wordlist_load(paths[p], &list_count);
+
+        if (!wordlist) {
+            continue;
+        }
+
+        for (size_t i = 0; i < list_count; i++) {
+            if (unique_count >= capacity) {
+                capacity *= 2;
+                if (capacity > MAX_WORDLIST_LINES) {
+                    sd_warn("Combined wordlist exceeds maximum size, truncating");
+                    wordlist_free(wordlist, list_count);
+                    break;
+                }
+                char **new_combined = realloc(combined, capacity * sizeof(char *));
+                if (!new_combined) {
+                    wordlist_free(wordlist, list_count);
+                    wordlist_free(combined, unique_count);
+                    return NULL;
+                }
+                combined = new_combined;
+            }
+
+            combined[unique_count] = strdup(wordlist[i]);
+            unique_count++;
+        }
+
+        wordlist_free(wordlist, list_count);
+    }
+
+    *total_count = unique_count;
+    sd_info("Combined %zu unique entries from %zu wordlist file(s)", unique_count, path_count);
+
+    return combined;
+}
+
+void wordlist_load_and_queue_auto(subdigger_ctx_t *ctx, const char *domain, size_t *total_candidates) {
+    if (!ctx || !domain || !total_candidates) {
+        return;
+    }
+
+    const char *search_dirs[] = {
+        "/usr/share/subdigger/wordlists",
+        NULL,
+        NULL
+    };
+
+    struct passwd *pw = getpwuid(getuid());
+    char user_dir[1024];
+    if (pw) {
+        snprintf(user_dir, sizeof(user_dir), "%s/.subdigger/wordlists", pw->pw_dir);
+        search_dirs[1] = user_dir;
+    }
+
+    for (int i = 0; search_dirs[i] != NULL; i++) {
+        DIR *dir = opendir(search_dirs[i]);
+        if (!dir) {
+            continue;
+        }
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_type != DT_REG && entry->d_type != DT_UNKNOWN) {
+                continue;
+            }
+
+            if (!ends_with_txt(entry->d_name)) {
+                continue;
+            }
+
+            char full_path[2048];
+            snprintf(full_path, sizeof(full_path), "%s/%s", search_dirs[i], entry->d_name);
+
+            struct stat st;
+            if (stat(full_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+                continue;
+            }
+
+            sd_info("Loading wordlist: %s", entry->d_name);
+
+            size_t list_count = 0;
+            char **wordlist = wordlist_load(full_path, &list_count);
+
+            if (wordlist) {
+                char source[64];
+                snprintf(source, sizeof(source), "wordlist:%s", entry->d_name);
+
+                for (size_t j = 0; j < list_count && !shutdown_requested; j++) {
+                    char subdomain[MAX_DOMAIN_LEN];
+                    snprintf(subdomain, sizeof(subdomain), "%s.%s", wordlist[j], domain);
+                    task_queue_push(ctx->task_queue, subdomain, source);
+                    (*total_candidates)++;
+                }
+
+                wordlist_free(wordlist, list_count);
+            }
+        }
+
+        closedir(dir);
+    }
 }

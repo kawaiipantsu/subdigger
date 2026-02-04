@@ -10,6 +10,8 @@ DATADIR ?= $(PREFIX)/share/subdigger
 SOURCES = $(wildcard src/*.c)
 OBJECTS = $(SOURCES:.c=.o)
 
+.PHONY: all man install clean deb test
+
 all: $(TARGET)
 
 $(TARGET): $(OBJECTS)
@@ -26,7 +28,8 @@ man/subdigger.1: man/subdigger.1.ronn
 install: $(TARGET) man
 	install -D -m 0755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
 	install -D -m 0644 man/subdigger.1 $(DESTDIR)$(MANDIR)/subdigger.1
-	install -D -m 0644 wordlists/common-subdomains.txt $(DESTDIR)$(DATADIR)/wordlists/common-subdomains.txt
+	mkdir -p $(DESTDIR)$(DATADIR)/wordlists
+	install -m 0644 wordlists/*.txt $(DESTDIR)$(DATADIR)/wordlists/
 
 clean:
 	rm -f $(TARGET) $(OBJECTS) man/subdigger.1

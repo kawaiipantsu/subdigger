@@ -1,3 +1,211 @@
+subdigger (1.2.4-1) unstable; urgency=high
+
+  * CHANGED: Ctrl+C now immediately terminates process (no graceful shutdown)
+  * FIXED: Improved DNS timeout handling to prevent thread hangs on ServFail
+  * DNS queries that receive ServFail or timeout are now properly cancelled
+  * wait_for_query() continues to process c-ares events even when no FDs active
+  * Forces query completion flag when timeout exceeded
+  * Immediate exit on SIGINT/SIGTERM prevents zombie threads
+  * Exit code 130 on interrupt
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 17:30:00 +0000
+
+subdigger (1.2.3-1) unstable; urgency=high
+
+  * CRITICAL: Fixed thread deadlock causing hangs during DNS resolution
+  * ARCHITECTURE: Each worker thread now has its own c-ares DNS channel
+  * Previously: Shared 7 DNS channels among 140 threads with mutex bottleneck
+  * Now: 140 independent DNS channels, one per thread (no mutex contention)
+  * Eliminated mutex lock held during entire DNS query duration (up to 10+ seconds)
+  * Massive performance improvement: All threads can query simultaneously
+  * Resolves hanging issue where only 1 of 20 threads per server could query at once
+  * Each thread's channel configured for its assigned DNS server
+  * Proper channel cleanup on thread exit
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 17:15:00 +0000
+
+subdigger (1.2.2-1) unstable; urgency=medium
+
+  * CHANGED: Increased thread limit to 200 per DNS server (was 200 total)
+  * CHANGED: Default DNS servers expanded to 7 providers for better redundancy
+  * Google DNS: 8.8.8.8, 8.8.4.4
+  * Cloudflare DNS: 1.1.1.1, 1.0.0.1
+  * OpenDNS: 208.67.222.222, 208.67.220.220
+  * Quad9: 9.9.9.9
+  * CHANGED: Default timeout reduced from 5 to 2 seconds in config template
+  * Default thread count: 20 per DNS server (140 total with 7 servers)
+  * Maximum thread count: 200 per DNS server (1400 total with 7 servers)
+  * Improved load distribution across multiple DNS providers
+  * Better performance and fault tolerance
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 17:10:00 +0000
+
+subdigger (1.2.0-1) unstable; urgency=medium
+
+  * FEATURE: Real-time output - results displayed immediately as found
+  * No more waiting until scan completes to see results
+  * CSV: Header written once, results streamed as discovered
+  * JSON: Newline-delimited JSON (NDJSON) for streaming output
+  * Thread-safe output with per-write mutex protection
+  * Significantly improved user experience for large scans
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 17:00:00 +0000
+
+subdigger (1.1.0-1) unstable; urgency=medium
+
+  * MAJOR: Multi-DNS server support with round-robin load balancing
+  * CHANGED: Default timeout reduced to 2 seconds for faster lookups
+  * FEATURE: Automatic scaling - 20 threads per DNS server by default
+  * FEATURE: Per-DNS server statistics reported every 60 seconds
+  * Shows queries/sec, avg response time, success rate, active threads per server
+  * Uses multiple DNS servers (8.8.8.8, 1.1.1.1, 8.8.4.4) by default
+  * Each DNS server gets dedicated thread pool for optimal performance
+  * Significant speed improvement for large wordlists
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 16:45:00 +0000
+
+subdigger (1.0.15-1) unstable; urgency=high
+
+  * CRITICAL FIX: Properly disable DNS search domains from resolv.conf
+  * Added ARES_FLAG_NOALIASES flag to prevent alias lookups
+  * Explicitly set domains to empty list (ARES_OPT_DOMAINS with ndomains=0)
+  * Now truly queries only exact FQDNs without search domain suffixes
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 16:35:00 +0000
+
+subdigger (1.0.14-1) unstable; urgency=medium
+
+  * IMPROVED: Wordlist entries now included if they have A/AAAA OR CNAME OR NS records
+  * Catches CNAME-only subdomains (common for CDNs and external services)
+  * More comprehensive subdomain detection
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 16:30:00 +0000
+
+subdigger (1.0.13-1) unstable; urgency=medium
+
+  * IMPROVED: Wordlist entries now included if they have A/AAAA OR NS records
+  * FIX: Disabled DNS search domains from resolv.conf (ARES_FLAG_NOSEARCH)
+  * Now tests only exact FQDNs, not search domain variants
+  * Catches delegated subdomains that have NS but no A records
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 16:25:00 +0000
+
+subdigger (1.0.12-1) unstable; urgency=medium
+
+  * CHANGED: --wordlist option now disables auto-discovery automatically
+  * Using -w/--wordlist now uses ONLY that specific wordlist file
+  * Updated help text to clarify behavior
+  * Simplified example (--no-auto-wordlists no longer needed with -w)
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 16:20:00 +0000
+
+subdigger (1.0.11-1) unstable; urgency=medium
+
+  * IMPROVED: Show HTTP status codes for crt.sh, Shodan, and VirusTotal failures
+  * Better debugging for rate limiting (429) and authentication issues (401, 403)
+  * Explicit HTTP status checks for non-200 responses
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 16:15:00 +0000
+
+subdigger (1.0.10-1) unstable; urgency=medium
+
+  * FIX: Country code field now properly sized for "N/A" (was truncated to "N/")
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 16:10:00 +0000
+
+subdigger (1.0.9-1) unstable; urgency=medium
+
+  * FEATURE: Include non-resolving subdomains from external sources
+  * Subdomains from crtsh, shodan, virustotal, dns-axfr now shown even if they don't resolve
+  * Non-resolving domains show N/A for DNS records but preserve discovery source
+  * Important for security assessment - shows historical/offline subdomains
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 16:00:00 +0000
+
+subdigger (1.0.8-1) unstable; urgency=medium
+
+  * IMPROVED: crt.sh now extracts both common_name and all names from name_value field
+  * IMPROVED: Source field now shows precise origin (crtsh, shodan, virustotal, dns-axfr, bruteforce, wordlist:filename.txt)
+  * FEATURE: Auto-enable API methods when API keys are present in config
+  * Each wordlist file tracked separately in source field
+  * Handles multi-line name_value entries from certificate transparency
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 15:50:00 +0000
+
+subdigger (1.0.7-1) unstable; urgency=medium
+
+  * Fixed progress monitoring not showing during execution
+  * Progress monitor now starts before candidate generation
+  * Added ETA (estimated time remaining) calculation
+  * Improved time display format (sec/min/hr)
+  * Progress shows during wordlist loading and queue processing
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 15:40:00 +0000
+
+subdigger (1.0.6-1) unstable; urgency=high
+
+  * CRITICAL: Fixed O(n²) performance issue in wordlist loading
+  * Removed inline duplicate checking that caused hanging with large wordlists
+  * Wordlist deduplication now handled by existing deduplicate_results()
+  * Large wordlists (300k+ lines) now load in seconds instead of hanging
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 15:35:00 +0000
+
+subdigger (1.0.5-1) unstable; urgency=medium
+
+  * Install all .txt wordlists from wordlists/ directory
+  * Updated Makefile to copy all *.txt files to /usr/share/subdigger/wordlists/
+  * Updated debian/install to include all wordlist files in .deb package
+  * Updated postinst to symlink all wordlists to user skeleton directory
+  * Now includes: common-subdomains.txt (329k lines), custom-subdomains.txt (19k lines)
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 15:30:00 +0000
+
+subdigger (1.0.4-1) unstable; urgency=medium
+
+  * Added graceful shutdown on SIGINT (Ctrl+C) and SIGTERM
+  * All worker threads properly stopped on signal
+  * Task queue shutdown on interrupt
+  * Progress monitor stopped cleanly
+  * Exit code 130 on interrupted operation
+  * Prevents orphaned threads and hung processes
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 15:30:00 +0000
+
+subdigger (1.0.3-1) unstable; urgency=medium
+
+  * BREAKING: Auto-wordlists now enabled by default (use --no-auto-wordlists to disable)
+  * BREAKING: Bruteforce disabled by default (use --bruteforce to enable)
+  * Changed bruteforce depth default from 2 to 3, max from 3 to 5
+  * Added underscore (_) to bruteforce charset (now: a-z0-9_)
+  * Added --bruteforce flag to explicitly enable bruteforce enumeration
+  * Added --bruteforce-depth option (1-5)
+  * Added --no-auto-wordlists to disable automatic wordlist discovery
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 14:50:00 +0000
+
+subdigger (1.0.2-1) unstable; urgency=medium
+
+  * Added --quiet/-q flag for pipe-friendly output (no logs)
+  * Added real-time progress reporting with status updates
+  * Added --auto-wordlists to scan all .txt files in wordlist directories
+  * Added --no-progress to disable progress monitoring
+  * Progress shows: candidates processed, results found, queue size, elapsed time
+  * Auto-wordlist discovery searches ~/.subdigger/wordlists and /usr/share/subdigger/wordlists
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 14:45:00 +0000
+
+subdigger (1.0.1-1) unstable; urgency=high
+
+  * CRITICAL: Fixed segmentation fault in multi-threaded operation
+  * Added mutex protection for c-ares DNS channel access
+  * Added mutex protection for MaxMind GeoIP database access
+  * Fixed race conditions when using default 50 threads
+  * All thread-unsafe library operations now properly serialized
+  * Verified with stress testing up to 100 concurrent threads
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 14:30:00 +0000
+
 subdigger (1.0.0-1) unstable; urgency=medium
 
   * Initial release

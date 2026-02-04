@@ -3,6 +3,8 @@
 #include <string.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <ares.h>
+#include <arpa/nameser.h>
 #include "../include/subdigger.h"
 
 task_queue_t *task_queue_init(size_t capacity) {
@@ -11,7 +13,7 @@ task_queue_t *task_queue_init(size_t capacity) {
         return NULL;
     }
 
-    queue->tasks = malloc(capacity * sizeof(char *));
+    queue->tasks = malloc(capacity * sizeof(task_item_t));
     if (!queue->tasks) {
         free(queue);
         return NULL;
@@ -35,13 +37,6 @@ void task_queue_destroy(task_queue_t *queue) {
         return;
     }
 
-    pthread_mutex_lock(&queue->mutex);
-    for (size_t i = 0; i < queue->count; i++) {
-        size_t idx = (queue->head + i) % queue->capacity;
-        free(queue->tasks[idx]);
-    }
-    pthread_mutex_unlock(&queue->mutex);
-
     free(queue->tasks);
     pthread_mutex_destroy(&queue->mutex);
     pthread_cond_destroy(&queue->not_empty);
@@ -49,8 +44,8 @@ void task_queue_destroy(task_queue_t *queue) {
     free(queue);
 }
 
-bool task_queue_push(task_queue_t *queue, const char *task) {
-    if (!queue || !task) {
+bool task_queue_push(task_queue_t *queue, const char *subdomain, const char *source) {
+    if (!queue || !subdomain || !source) {
         return false;
     }
 
@@ -65,7 +60,8 @@ bool task_queue_push(task_queue_t *queue, const char *task) {
         return false;
     }
 
-    queue->tasks[queue->tail] = strdup(task);
+    safe_strncpy(queue->tasks[queue->tail].subdomain, subdomain, sizeof(queue->tasks[queue->tail].subdomain));
+    safe_strncpy(queue->tasks[queue->tail].source, source, sizeof(queue->tasks[queue->tail].source));
     queue->tail = (queue->tail + 1) % queue->capacity;
     queue->count++;
 
@@ -75,9 +71,9 @@ bool task_queue_push(task_queue_t *queue, const char *task) {
     return true;
 }
 
-char *task_queue_pop(task_queue_t *queue) {
-    if (!queue) {
-        return NULL;
+bool task_queue_pop(task_queue_t *queue, task_item_t *item) {
+    if (!queue || !item) {
+        return false;
     }
 
     pthread_mutex_lock(&queue->mutex);
@@ -88,17 +84,17 @@ char *task_queue_pop(task_queue_t *queue) {
 
     if (queue->count == 0 && queue->shutdown) {
         pthread_mutex_unlock(&queue->mutex);
-        return NULL;
+        return false;
     }
 
-    char *task = queue->tasks[queue->head];
+    memcpy(item, &queue->tasks[queue->head], sizeof(task_item_t));
     queue->head = (queue->head + 1) % queue->capacity;
     queue->count--;
 
     pthread_cond_signal(&queue->not_full);
     pthread_mutex_unlock(&queue->mutex);
 
-    return task;
+    return true;
 }
 
 void task_queue_shutdown(task_queue_t *queue) {
@@ -168,24 +164,86 @@ bool result_buffer_add(result_buffer_t *buffer, const subdomain_result_t *result
     return true;
 }
 
-static void *worker_thread(void *arg) {
-    subdigger_ctx_t *ctx = (subdigger_ctx_t *)arg;
+typedef struct {
+    subdigger_ctx_t *ctx;
+    size_t server_idx;
+} worker_thread_args_t;
 
-    while (1) {
-        char *subdomain = task_queue_pop(ctx->task_queue);
-        if (!subdomain) {
+static void *worker_thread(void *arg) {
+    worker_thread_args_t *args = (worker_thread_args_t *)arg;
+    subdigger_ctx_t *ctx = args->ctx;
+    size_t server_idx = args->server_idx;
+    free(args);
+
+    thread_dns_context_t dns_ctx;
+    dns_ctx.server_idx = server_idx;
+
+    ares_channel channel;
+    struct ares_options options;
+    memset(&options, 0, sizeof(options));
+
+    options.flags = ARES_FLAG_NOSEARCH | ARES_FLAG_NOALIASES;
+    options.timeout = ctx->config->timeout * 1000;
+    options.tries = 2;
+    options.ndomains = 0;
+    options.domains = NULL;
+
+    int optmask = ARES_OPT_FLAGS | ARES_OPT_TIMEOUTMS | ARES_OPT_TRIES | ARES_OPT_DOMAINS;
+
+    if (ares_init_options(&channel, &options, optmask) != ARES_SUCCESS) {
+        sd_error("Worker thread failed to initialize DNS channel");
+        return NULL;
+    }
+
+    if (server_idx < ctx->dns_server_count) {
+        ares_set_servers_csv(channel, ctx->dns_servers[server_idx].server);
+        __sync_add_and_fetch(&ctx->dns_servers[server_idx].active_threads, 1);
+    }
+
+    dns_ctx.channel = channel;
+
+    while (!shutdown_requested) {
+        task_item_t item;
+        if (!task_queue_pop(ctx->task_queue, &item)) {
             break;
         }
 
         subdomain_result_t result;
         memset(&result, 0, sizeof(result));
 
-        if (dns_resolve_full(ctx, subdomain, &result)) {
+        bool resolved = dns_resolve_full(ctx, item.subdomain, &result, &dns_ctx);
+
+        bool include_non_resolving = (strstr(item.source, "crtsh") != NULL ||
+                                     strstr(item.source, "shodan") != NULL ||
+                                     strstr(item.source, "virustotal") != NULL ||
+                                     strstr(item.source, "dns-axfr") != NULL);
+
+        if (resolved || include_non_resolving) {
+            safe_strncpy(result.source, item.source, sizeof(result.source));
             result_buffer_add(ctx->result_buffer, &result);
+            __sync_add_and_fetch(&ctx->results_found, 1);
+
+            if (ctx->output_fp) {
+                pthread_mutex_lock(&ctx->output_mutex);
+                if (strcmp(ctx->config->output_format, "json") == 0) {
+                    output_json_record(ctx->output_fp, &result, true);
+                    fprintf(ctx->output_fp, "\n");
+                } else {
+                    output_csv_record(ctx->output_fp, &result);
+                }
+                fflush(ctx->output_fp);
+                pthread_mutex_unlock(&ctx->output_mutex);
+            }
         }
 
-        free(subdomain);
+        __sync_add_and_fetch(&ctx->candidates_processed, 1);
     }
+
+    if (server_idx < ctx->dns_server_count) {
+        __sync_sub_and_fetch(&ctx->dns_servers[server_idx].active_threads, 1);
+    }
+
+    ares_destroy(channel);
 
     return NULL;
 }
@@ -195,25 +253,56 @@ int thread_pool_create(subdigger_ctx_t *ctx) {
         return -1;
     }
 
-    int thread_count = ctx->config->threads;
-    if (thread_count <= 0 || thread_count > MAX_THREADS) {
-        thread_count = DEFAULT_THREADS;
+    int total_threads;
+    if (ctx->config->threads > 0) {
+        total_threads = ctx->config->threads;
+    } else {
+        total_threads = ctx->dns_server_count * DEFAULT_THREADS_PER_DNS_SERVER;
     }
 
-    ctx->threads = malloc(thread_count * sizeof(pthread_t));
+    int max_total_threads = ctx->dns_server_count * MAX_THREADS_PER_DNS_SERVER;
+    if (total_threads > max_total_threads) {
+        total_threads = max_total_threads;
+    }
+
+    ctx->threads = malloc(total_threads * sizeof(pthread_t));
     if (!ctx->threads) {
         sd_error("Failed to allocate thread pool");
         return -1;
     }
 
-    for (int i = 0; i < thread_count; i++) {
-        if (pthread_create(&ctx->threads[i], NULL, worker_thread, ctx) != 0) {
-            sd_error("Failed to create worker thread %d", i);
-            return -1;
+    ctx->config->threads = total_threads;
+
+    int threads_per_server = total_threads / ctx->dns_server_count;
+    int remaining = total_threads % ctx->dns_server_count;
+    int thread_idx = 0;
+
+    for (size_t server_idx = 0; server_idx < ctx->dns_server_count; server_idx++) {
+        int threads_for_this_server = threads_per_server;
+        if (remaining > 0) {
+            threads_for_this_server++;
+            remaining--;
+        }
+
+        for (int i = 0; i < threads_for_this_server; i++) {
+            worker_thread_args_t *args = malloc(sizeof(worker_thread_args_t));
+            if (!args) {
+                sd_error("Failed to allocate worker thread args");
+                return -1;
+            }
+            args->ctx = ctx;
+            args->server_idx = server_idx;
+
+            if (pthread_create(&ctx->threads[thread_idx], NULL, worker_thread, args) != 0) {
+                sd_error("Failed to create worker thread %d", thread_idx);
+                free(args);
+                return -1;
+            }
+            thread_idx++;
         }
     }
 
-    sd_info("Started %d worker threads", thread_count);
+    sd_info("Started %d worker threads (%d per DNS server)", total_threads, threads_per_server);
     return 0;
 }
 

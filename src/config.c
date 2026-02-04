@@ -14,25 +14,33 @@ void config_init(config_t *config) {
 
     memset(config, 0, sizeof(config_t));
 
-    config->threads = DEFAULT_THREADS;
+    config->threads = 0;
     config->timeout = DEFAULT_TIMEOUT;
     config->bruteforce_depth = DEFAULT_BRUTEFORCE_DEPTH;
     config->cache_enabled = true;
     config->output_format = strdup("csv");
+    config->quiet_mode = false;
+    config->show_progress = true;
+    config->auto_wordlists = true;
+    config->enable_bruteforce = false;
 
-    config->dns_servers = malloc(2 * sizeof(char *));
+    config->dns_servers = malloc(7 * sizeof(char *));
     if (config->dns_servers) {
         config->dns_servers[0] = strdup("8.8.8.8");
-        config->dns_servers[1] = strdup("1.1.1.1");
-        config->dns_server_count = 2;
+        config->dns_servers[1] = strdup("8.8.4.4");
+        config->dns_servers[2] = strdup("1.1.1.1");
+        config->dns_servers[3] = strdup("1.0.0.1");
+        config->dns_servers[4] = strdup("208.67.222.222");
+        config->dns_servers[5] = strdup("208.67.220.220");
+        config->dns_servers[6] = strdup("9.9.9.9");
+        config->dns_server_count = 7;
     }
 
-    config->methods = malloc(3 * sizeof(char *));
+    config->methods = malloc(2 * sizeof(char *));
     if (config->methods) {
         config->methods[0] = strdup("wordlist");
         config->methods[1] = strdup("cert");
-        config->methods[2] = strdup("bruteforce");
-        config->method_count = 3;
+        config->method_count = 2;
     }
 
     struct passwd *pw = getpwuid(getuid());
@@ -174,8 +182,8 @@ int config_load(config_t *config, const char *path) {
         if (strcmp(section, "general") == 0) {
             if (strcmp(key, "threads") == 0) {
                 config->threads = atoi(value);
-                if (config->threads <= 0 || config->threads > MAX_THREADS) {
-                    config->threads = DEFAULT_THREADS;
+                if (config->threads <= 0 || config->threads > (MAX_DNS_SERVERS * MAX_THREADS_PER_DNS_SERVER)) {
+                    config->threads = 0;
                 }
             } else if (strcmp(key, "timeout") == 0) {
                 config->timeout = atoi(value);

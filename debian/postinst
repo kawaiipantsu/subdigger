@@ -32,9 +32,12 @@ EOF
 
         chmod 600 /etc/skel/.subdigger/config
 
-        if [ -f /usr/share/subdigger/wordlists/common-subdomains.txt ]; then
-            ln -sf /usr/share/subdigger/wordlists/common-subdomains.txt \
-                   /etc/skel/.subdigger/wordlists/common-subdomains.txt
+        if [ -d /usr/share/subdigger/wordlists ]; then
+            for wordlist in /usr/share/subdigger/wordlists/*.txt; do
+                if [ -f "$wordlist" ]; then
+                    ln -sf "$wordlist" /etc/skel/.subdigger/wordlists/
+                fi
+            done
         fi
     fi
 
