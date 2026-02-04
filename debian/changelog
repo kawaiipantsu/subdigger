@@ -1,0 +1,17 @@
+subdigger (1.0.0-1) unstable; urgency=medium
+
+  * Initial release
+  * Multi-threaded subdomain discovery with c-ares
+  * Certificate transparency log integration
+  * Wordlist enumeration support
+  * OSINT API integration (Shodan, VirusTotal)
+  * Bruteforce subdomain generation
+  * DNS zone transfer attempts
+  * Comprehensive DNS record enrichment (A, CNAME, NS, MX, TXT)
+  * GeoIP country code resolution
+  * CSV and JSON output formats
+  * Result caching with 24-hour TTL
+  * Configuration file support
+  * Secure input validation and sanitization
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 14:00:00 +0000

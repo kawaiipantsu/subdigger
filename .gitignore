@@ -1,0 +1,121 @@
+# SubDigger - Git Ignore File
+
+# Compiled binary
+subdigger
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# Generated man pages
+man/subdigger.1
+*.1.html
+
+# Debian packaging artifacts
+debian/subdigger/
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/*.log
+debian/tmp/
+
+# Build directories
+build/
+dist/
+*.deb
+
+# Backup files
+*~
+*.bak
+*.swp
+*.swo
+.*.swp
+.*.swo
+
+# Editor directories and files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+
+# Cache and temp files
+*.cache
+.cache/
+tmp/
+*.tmp
+
+# User-specific config (keep template)
+!.subdigger/config.example
+
+# Test outputs
+test_results/
+*.log
+test-*.txt
+
+# Core dumps
+core
+core.*
+vgcore.*
+
+# Valgrind output
+valgrind-*.log
+massif.out.*
+
+# Coverage files
+*.gcov
+*.gcda
+*.gcno
+coverage/
+
+# Dependencies
+.depend
+.deps/
+
+# Archive files
+*.tar.gz
+*.zip
+*.tar.bz2
+*.tar.xz

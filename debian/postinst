@@ -1,0 +1,52 @@
+#!/bin/bash
+
+set -e
+
+if [ "$1" = "configure" ]; then
+    if [ ! -f /etc/skel/.subdigger/config ]; then
+        mkdir -p /etc/skel/.subdigger/{cache,wordlists}
+
+        cat > /etc/skel/.subdigger/config <<'EOF'
+[general]
+threads = 50
+timeout = 5
+
+[dns]
+servers = 8.8.8.8,1.1.1.1
+
+[discovery]
+methods = wordlist,cert,bruteforce
+wordlist_path = ~/.subdigger/wordlists/common-subdomains.txt
+bruteforce_depth = 2
+
+[output]
+format = csv
+
+[cache]
+enabled = true
+
+[apis]
+shodan_key =
+virustotal_key =
+EOF
+
+        chmod 600 /etc/skel/.subdigger/config
+
+        if [ -f /usr/share/subdigger/wordlists/common-subdomains.txt ]; then
+            ln -sf /usr/share/subdigger/wordlists/common-subdomains.txt \
+                   /etc/skel/.subdigger/wordlists/common-subdomains.txt
+        fi
+    fi
+
+    if [ ! -f /usr/share/GeoIP/GeoLite2-Country.mmdb ]; then
+        echo "Notice: MaxMind GeoIP2 database not found"
+        echo "To enable country code resolution, install geoipupdate:"
+        echo "  apt-get install geoipupdate"
+        echo "  Configure /etc/GeoIP.conf with your MaxMind account"
+        echo "  Run: geoipupdate"
+    fi
+fi
+
+#DEBHELPER#
+
+exit 0

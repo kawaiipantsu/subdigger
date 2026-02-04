@@ -1,0 +1,206 @@
+subdigger(1) -- high-performance subdomain discovery tool
+========================================================
+
+## SYNOPSIS
+
+`subdigger` -d <domain> [options]
+
+## DESCRIPTION
+
+SubDigger is a high-performance, multi-threaded subdomain discovery tool for security researchers and penetration testers. It discovers subdomains using multiple methods including certificate transparency logs, wordlist enumeration, DNS zone transfers, OSINT APIs, and bruteforce generation.
+
+The tool provides comprehensive DNS enrichment including A, CNAME, NS, MX, and TXT records, and integrates with MaxMind GeoIP2 to resolve IP addresses to country codes.
+
+## OPTIONS
+
+### Required Options
+
+* `-d`, `--domain` <domain>:
+  Target domain to scan for subdomains
+
+### Optional Options
+
+* `-t`, `--threads` <num>:
+  Number of worker threads (default: 50, max: 200)
+
+* `-w`, `--wordlist` <file>:
+  Path to wordlist file for enumeration
+
+* `-o`, `--output` <file>:
+  Output file path (default: stdout)
+
+* `-f`, `--format` <csv|json>:
+  Output format (default: csv)
+
+* `-m`, `--methods` <list>:
+  Comma-separated list of discovery methods to use.
+  Available methods: wordlist, cert, bruteforce, dns, api
+
+* `--no-cache`:
+  Disable result caching
+
+* `-h`, `--help`:
+  Display help message and exit
+
+* `-v`, `--version`:
+  Display version information and exit
+
+## CONFIGURATION
+
+SubDigger reads configuration from `~/.subdigger/config` in INI format.
+
+### Configuration File Format
+
+    [general]
+    threads = 50
+    timeout = 5
+
+    [dns]
+    servers = 8.8.8.8,1.1.1.1
+
+    [discovery]
+    methods = wordlist,cert,bruteforce
+    wordlist_path = ~/.subdigger/wordlists/common-subdomains.txt
+    bruteforce_depth = 2
+
+    [output]
+    format = csv
+
+    [cache]
+    enabled = true
+
+    [apis]
+    shodan_key = YOUR_SHODAN_API_KEY
+    virustotal_key = YOUR_VIRUSTOTAL_API_KEY
+
+## ENVIRONMENT
+
+* `SHODAN_API_KEY`:
+  Shodan API key for OSINT queries
+
+* `VIRUSTOTAL_API_KEY`:
+  VirusTotal API key for subdomain lookups
+
+## FILES
+
+* `~/.subdigger/config`:
+  User configuration file
+
+* `~/.subdigger/wordlists/`:
+  Directory for wordlist files
+
+* `~/.subdigger/cache/`:
+  Directory for cached results (24-hour TTL)
+
+* `/usr/share/GeoIP/GeoLite2-Country.mmdb`:
+  MaxMind GeoIP2 database for country resolution
+
+* `/usr/share/subdigger/wordlists/common-subdomains.txt`:
+  Default wordlist (installed with package)
+
+## EXAMPLES
+
+Basic subdomain discovery:
+
+    $ subdigger -d example.com
+
+Discovery with JSON output:
+
+    $ subdigger -d example.com -f json -o results.json
+
+Use specific methods with 100 threads:
+
+    $ subdigger -d example.com -m wordlist,cert -t 100
+
+Custom wordlist:
+
+    $ subdigger -d example.com -w /usr/share/wordlists/dns.txt
+
+Disable caching:
+
+    $ subdigger -d example.com --no-cache
+
+## OUTPUT FORMATS
+
+### CSV Format
+
+    Date,Subdomain,A/CNAME,NS,MX,TXT_Present,TLD,Country,Source
+    2026-02-04T14:23:45Z,www.example.com,93.184.216.34,N/A,N/A,No,com,US,discovery
+
+### JSON Format
+
+    {
+      "subdomains": [
+        {
+          "timestamp": "2026-02-04T14:23:45Z",
+          "subdomain": "www.example.com",
+          "a_record": "93.184.216.34",
+          "cname_record": "N/A",
+          "ns_record": "N/A",
+          "mx_record": "N/A",
+          "has_txt": false,
+          "tld": "com",
+          "country_code": "US",
+          "source": "discovery"
+        }
+      ]
+    }
+
+## DISCOVERY METHODS
+
+* `wordlist`:
+  Enumerate subdomains using a wordlist file
+
+* `cert`:
+  Query certificate transparency logs via crt.sh
+
+* `bruteforce`:
+  Generate and test subdomain permutations (a-z, 0-9)
+
+* `dns`:
+  Attempt DNS zone transfer (AXFR)
+
+* `api`:
+  Query OSINT APIs (Shodan, VirusTotal) if API keys provided
+
+## PERFORMANCE
+
+SubDigger is optimized for high-performance enumeration:
+
+- Multi-threaded DNS resolution using c-ares (asynchronous)
+- Thread-safe task queue with configurable worker pool
+- Automatic result deduplication
+- 24-hour file-based caching to avoid redundant scans
+- Target: 1000+ DNS queries per second with 50 threads
+
+## SECURITY CONSIDERATIONS
+
+- Configuration files should have restricted permissions (0600)
+- API keys should never be logged or displayed
+- The tool validates and sanitizes all domain inputs
+- Compiled with stack protection and buffer overflow defenses
+- DNS timeouts prevent resource exhaustion
+
+## DEPENDENCIES
+
+- libc-ares2: Asynchronous DNS resolution
+- libcurl4: HTTP client for API queries
+- libjson-c5: JSON parsing
+- libmaxminddb0: GeoIP database lookups
+- geoipupdate: MaxMind GeoIP2 database updater (recommended)
+
+## BUGS
+
+Report bugs at: https://github.com/kawaiipantsu/subdigger/issues
+
+## AUTHOR
+
+SubDigger was developed by Kawaiipantsu (thugsred@protonmail.com) for security research and penetration testing.
+
+## SEE ALSO
+
+nmap(1), dnsrecon(1), amass(1), subfinder(1), dig(1)
+
+## LICENSE
+
+MIT License - See LICENSE file for details

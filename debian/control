@@ -1,0 +1,37 @@
+Source: subdigger
+Section: net
+Priority: optional
+Maintainer: Kawaiipantsu <thugsred@protonmail.com>
+Build-Depends: debhelper (>= 11),
+               libc-ares-dev,
+               libcurl4-openssl-dev,
+               libjson-c-dev,
+               libmaxminddb-dev,
+               ruby-ronn
+Standards-Version: 4.5.0
+Homepage: https://github.com/kawaiipantsu/subdigger
+
+Package: subdigger
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         libc-ares2,
+         libcurl4,
+         libjson-c5,
+         libmaxminddb0
+Recommends: geoipupdate
+Description: High-performance subdomain discovery tool
+ SubDigger is a multi-threaded subdomain enumeration tool designed for
+ security researchers and penetration testers.
+ .
+ Features include:
+  - Multiple discovery methods (certificate transparency, wordlists,
+    OSINT APIs, bruteforce, DNS zone transfer)
+  - Comprehensive DNS enrichment (A, CNAME, NS, MX, TXT records)
+  - GeoIP integration for country resolution
+  - CSV and JSON output formats
+  - Multi-threaded architecture for high performance
+  - Result caching with configurable TTL
+  - Secure coding practices with input validation
+ .
+ Performance target: 1000+ DNS queries per second with 50 threads.

@@ -1,0 +1,222 @@
+# Common subdomain wordlist for SubDigger
+# Infrastructure
+www
+mail
+ftp
+webmail
+smtp
+pop
+pop3
+imap
+ns
+ns1
+ns2
+ns3
+ns4
+dns
+dns1
+dns2
+mx
+mx1
+mx2
+gateway
+router
+firewall
+# Web Services
+api
+dev
+staging
+stage
+test
+uat
+qa
+demo
+beta
+alpha
+prod
+production
+# Administration
+admin
+administrator
+cpanel
+webadmin
+panel
+control
+manage
+manager
+# Content & Media
+blog
+forum
+shop
+store
+cdn
+static
+assets
+media
+images
+img
+files
+upload
+downloads
+docs
+documentation
+wiki
+# Mobile & Apps
+mobile
+m
+wap
+app
+apps
+ios
+android
+# Security & VPN
+vpn
+remote
+ssl
+tls
+secure
+auth
+login
+signin
+signup
+# Communication
+chat
+support
+help
+helpdesk
+ticket
+tickets
+contact
+feedback
+# Databases
+db
+database
+mysql
+postgres
+mongodb
+redis
+# Development
+git
+gitlab
+github
+svn
+jenkins
+ci
+cd
+build
+# Monitoring
+monitor
+monitoring
+stats
+status
+metrics
+grafana
+prometheus
+logs
+# Mail Services
+autodiscover
+autoconfig
+exchange
+owa
+webmail
+lists
+# Cloud & Hosting
+cloud
+s3
+storage
+backup
+archive
+# Regional
+us
+eu
+asia
+uk
+de
+fr
+es
+# Numeric prefixes
+web1
+web2
+web3
+mail1
+mail2
+mail3
+server1
+server2
+host1
+host2
+# Common patterns
+new
+old
+legacy
+portal
+dashboard
+console
+internal
+external
+public
+private
+secure
+intranet
+extranet
+crm
+erp
+hr
+finance
+sales
+marketing
+partners
+clients
+customers
+# E-commerce
+cart
+checkout
+payment
+payments
+order
+orders
+account
+accounts
+# Social
+social
+twitter
+facebook
+linkedin
+instagram
+# Development environments
+local
+localhost
+sandbox
+training
+# API variations
+api-dev
+api-staging
+api-prod
+rest
+graphql
+ws
+websocket
+# Other services
+proxy
+cache
+search
+elasticsearch
+solr
+ftp2
+sftp
+ssh
+telnet
+rdp
+vnc
+ntp
+time
+ldap
+ad
+dc
+pki
+ca
+crl
+ocsp
+sip
+voip
+pbx
