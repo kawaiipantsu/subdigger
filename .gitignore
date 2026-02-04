@@ -94,6 +94,9 @@ tmp/
 test_results/
 *.log
 test-*.txt
+results.csv
+result.csv
+output.csv
 
 # Core dumps
 core
