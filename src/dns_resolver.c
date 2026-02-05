@@ -638,6 +638,15 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
         __sync_add_and_fetch(&server->failures, 1);
     }
 
+    // Check if result matches wildcard IP and should be filtered
+    if (has_resolution && (strlen(result->a_record) > 0 || strlen(result->aaaa_record) > 0)) {
+        const char *check_ip = strlen(result->a_record) > 0 ? result->a_record : result->aaaa_record;
+        if (wildcard_is_filtered_ip(ctx, check_ip)) {
+            __sync_add_and_fetch(&ctx->wildcard_filtered, 1);
+            return false;
+        }
+    }
+
     return has_resolution;
 }
 

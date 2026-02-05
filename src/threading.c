@@ -441,12 +441,32 @@ static void *worker_thread(void *arg) {
 
         bool resolved = dns_resolve_full(ctx, item.subdomain, &result, &dns_ctx);
 
+        // Include non-resolving results from passive sources and reverse DNS
+        // Passive sources (APIs, certificates) provide historical data
+        // Reverse DNS (PTR records) shows infrastructure even if forward DNS is missing
+        // Exclude recursive-dns/cname/ns as these should resolve if valid
         bool include_non_resolving = (strstr(item.source, "crtsh") != NULL ||
                                      strstr(item.source, "shodan") != NULL ||
                                      strstr(item.source, "virustotal") != NULL ||
                                      strstr(item.source, "dns-axfr") != NULL ||
-                                     strstr(item.source, "recursive-dns") != NULL ||
-                                     strstr(item.source, "rdns") != NULL);
+                                     strstr(item.source, "rdns") != NULL ||
+                                     strstr(item.source, "bevigil") != NULL ||
+                                     strstr(item.source, "binaryedge") != NULL ||
+                                     strstr(item.source, "bufferover") != NULL ||
+                                     strstr(item.source, "c99") != NULL ||
+                                     strstr(item.source, "censys") != NULL ||
+                                     strstr(item.source, "certspotter") != NULL ||
+                                     strstr(item.source, "chaos") != NULL ||
+                                     strstr(item.source, "fullhunt") != NULL ||
+                                     strstr(item.source, "github") != NULL ||
+                                     strstr(item.source, "hunter") != NULL ||
+                                     strstr(item.source, "intelx") != NULL ||
+                                     strstr(item.source, "leakix") != NULL ||
+                                     strstr(item.source, "netlas") != NULL ||
+                                     strstr(item.source, "passivetotal") != NULL ||
+                                     strstr(item.source, "securitytrails") != NULL ||
+                                     strstr(item.source, "whoisxmlapi") != NULL ||
+                                     strstr(item.source, "zoomeye") != NULL);
 
         if (resolved || include_non_resolving) {
             safe_strncpy(result.source, item.source, sizeof(result.source));

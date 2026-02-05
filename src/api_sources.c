@@ -56,7 +56,7 @@ static char **generic_api_query(const char *url, struct curl_slist *headers,
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "SubDigger/1.4.0");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "SubDigger/1.4.1");
 
     CURLcode res = curl_easy_perform(curl);
     long http_code = 0;
@@ -228,7 +228,7 @@ char **api_censys_query(const char *domain, const char *api_id, const char *api_
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "SubDigger/1.4.0");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "SubDigger/1.4.1");
 
     CURLcode res = curl_easy_perform(curl);
     curl_easy_cleanup(curl);

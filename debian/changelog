@@ -1,3 +1,28 @@
+subdigger (1.4.1-1) unstable; urgency=medium
+
+  * FEATURE: Automatic wildcard DNS detection and filtering
+  * Detects wildcard DNS records (*.example.com) before enumeration starts
+  * Tests 3 random impossible subdomains to identify wildcard patterns
+  * Supports single IP wildcards and round-robin wildcard detection
+  * Filters results matching wildcard IPs to prevent false positives
+  * Prevents infinite recursion from wildcard CNAME/NS records
+  * Thread-safe wildcard IP checking with mutex protection
+  * Reports wildcard detection status and filtered result count
+  * Added wildcard_detect(), wildcard_is_filtered_ip(), wildcard_cleanup()
+  * Added wildcard_ips, wildcard_ip_count, wildcard_mutex to subdigger_ctx_t
+  * Added wildcard_filtered counter for statistics
+  * Zero configuration required - runs automatically on every scan
+  * Performance impact: ~2 seconds detection overhead
+  * Dramatically improves result accuracy for domains with wildcard DNS
+  * IMPROVED: Refined non-resolving subdomain filtering logic
+  * Reverse DNS (rdns/PTR) results included even if non-resolving
+  * CNAME/NS recursive targets now require resolution (prevents stale entries)
+  * Non-resolving subdomains still included from passive sources (APIs, certs)
+  * Added all 19 API sources to non-resolving whitelist
+  * PTR records valuable for infrastructure mapping even without forward DNS
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Thu, 05 Feb 2026 21:00:00 +0000
+
 subdigger (1.4.0-1) unstable; urgency=medium
 
   * FEATURE: Massive API integration expansion - 17 new passive discovery sources

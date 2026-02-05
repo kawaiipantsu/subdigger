@@ -169,14 +169,18 @@ typedef struct {
     size_t dns_server_count;
     pthread_mutex_t geoip_mutex;
     pthread_mutex_t output_mutex;
+    pthread_mutex_t wildcard_mutex;
     FILE *output_fp;
     volatile bool output_header_written;
     volatile size_t candidates_processed;
     volatile size_t results_found;
     volatile bool discovery_active;
+    volatile size_t wildcard_filtered;
     time_t start_time;
     pthread_t stats_thread;
     volatile bool stats_active;
+    char **wildcard_ips;
+    size_t wildcard_ip_count;
 } subdigger_ctx_t;
 
 void config_init(config_t *config);
@@ -224,6 +228,10 @@ void dns_cleanup(subdigger_ctx_t *ctx);
 bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_result_t *result, thread_dns_context_t *dns_ctx);
 void start_dns_stats_monitor(subdigger_ctx_t *ctx);
 void stop_dns_stats_monitor(subdigger_ctx_t *ctx);
+
+int wildcard_detect(subdigger_ctx_t *ctx, const char *domain);
+bool wildcard_is_filtered_ip(subdigger_ctx_t *ctx, const char *ip);
+void wildcard_cleanup(subdigger_ctx_t *ctx);
 
 int geoip_init(subdigger_ctx_t *ctx);
 void geoip_cleanup(subdigger_ctx_t *ctx);

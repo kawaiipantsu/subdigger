@@ -89,6 +89,13 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
         return -1;
     }
 
+    // Detect wildcard DNS records
+    wildcard_detect(ctx, domain);
+
+    if (shutdown_requested) {
+        return -1;
+    }
+
     start_progress_monitor(ctx);
 
     size_t total_candidates = 0;
@@ -533,6 +540,8 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
     if (config->cache_enabled) {
         cache_save(domain, ctx->result_buffer);
     }
+
+    wildcard_cleanup(ctx);
 
     return 0;
 }
