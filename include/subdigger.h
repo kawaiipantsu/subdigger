@@ -65,8 +65,27 @@ typedef struct {
     int method_count;
     bool cache_enabled;
     char *output_format;
+    // API Keys
+    char *api_key_bevigil;
+    char *api_key_binaryedge;
+    char *api_key_c99;
+    char *api_key_censys_id;
+    char *api_key_censys_secret;
+    char *api_key_certspotter;
+    char *api_key_chaos;
+    char *api_key_fullhunt;
+    char *api_key_github;
+    char *api_key_hunter;
+    char *api_key_intelx;
+    char *api_key_leakix;
+    char *api_key_netlas;
+    char *api_key_passivetotal_user;
+    char *api_key_passivetotal_key;
+    char *api_key_securitytrails;
     char *api_key_shodan;
     char *api_key_virustotal;
+    char *api_key_whoisxmlapi;
+    char *api_key_zoomeye;
     char *target_domain;
     char *output_file;
     bool quiet_mode;
@@ -228,8 +247,26 @@ int bruteforce_generate(subdigger_ctx_t *ctx);
 char **cert_query_crtsh(const char *domain, size_t *count);
 void cert_free_results(char **results, size_t count);
 
+// API Sources
+char **api_bevigil_query(const char *domain, const char *api_key, size_t *count);
+char **api_binaryedge_query(const char *domain, const char *api_key, size_t *count);
+char **api_bufferover_query(const char *domain, size_t *count);
+char **api_c99_query(const char *domain, const char *api_key, size_t *count);
+char **api_censys_query(const char *domain, const char *api_id, const char *api_secret, size_t *count);
+char **api_certspotter_query(const char *domain, const char *api_key, size_t *count);
+char **api_chaos_query(const char *domain, const char *api_key, size_t *count);
+char **api_fullhunt_query(const char *domain, const char *api_key, size_t *count);
+char **api_github_query(const char *domain, const char *api_token, size_t *count);
+char **api_hunter_query(const char *domain, const char *api_key, size_t *count);
+char **api_intelx_query(const char *domain, const char *api_key, size_t *count);
+char **api_leakix_query(const char *domain, const char *api_key, size_t *count);
+char **api_netlas_query(const char *domain, const char *api_key, size_t *count);
+char **api_passivetotal_query(const char *domain, const char *api_user, const char *api_key, size_t *count);
+char **api_securitytrails_query(const char *domain, const char *api_key, size_t *count);
 char **api_shodan_query(const char *domain, const char *api_key, size_t *count);
 char **api_virustotal_query(const char *domain, const char *api_key, size_t *count);
+char **api_whoisxmlapi_query(const char *domain, const char *api_key, size_t *count);
+char **api_zoomeye_query(const char *domain, const char *api_key, size_t *count);
 void api_free_results(char **results, size_t count);
 
 int dns_axfr_attempt(const char *domain, char ***results, size_t *count);

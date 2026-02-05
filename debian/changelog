@@ -1,3 +1,35 @@
+subdigger (1.4.0-1) unstable; urgency=medium
+
+  * FEATURE: Massive API integration expansion - 17 new passive discovery sources
+  * Added BeVigil API integration (https://bevigil.com/osint-api)
+  * Added BinaryEdge API integration (https://www.binaryedge.io/)
+  * Added BufferOver API integration - free tier, no key required
+  * Added C99.nl API integration (https://api.c99.nl/)
+  * Added Censys API integration with dual credential support (https://search.censys.io/)
+  * Added CertSpotter API integration (https://sslmate.com/certspotter/api/)
+  * Added Chaos API integration (ProjectDiscovery, https://chaos.projectdiscovery.io/)
+  * Added FullHunt API integration (https://fullhunt.io/)
+  * Added GitHub API integration (https://github.com/settings/tokens)
+  * Added Hunter API integration (https://hunter.io/api)
+  * Added IntelX API integration (https://intelx.io/)
+  * Added LeakIX API integration (https://leakix.net/)
+  * Added Netlas API integration (https://netlas.io/)
+  * Added PassiveTotal API integration with dual credential support (https://community.riskiq.com/)
+  * Added SecurityTrails API integration (https://securitytrails.com/)
+  * Added WhoisXMLAPI integration (https://whoisxmlapi.com/)
+  * Added ZoomEye API integration (https://www.zoomeye.org/)
+  * IMPROVED: Created generic_api_query() helper function to reduce code duplication
+  * IMPROVED: Standardized API error handling and HTTP status code responses
+  * IMPROVED: Enhanced config template with all 19 API services and documentation
+  * Added API key fields to config_t struct for all new services
+  * Added config parsing support for all new API keys in [apis] section
+  * Integrated all APIs into subdomain discovery workflow
+  * APIs use appropriate authentication methods (Bearer, API-KEY, Basic Auth, Query Params)
+  * Rate limit detection via HTTP status codes (429, 401, 403)
+  * Total API sources now: 19 services (1 free tier, 18 require API keys)
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Wed, 05 Feb 2026 20:00:00 +0000
+
 subdigger (1.3.0-1) unstable; urgency=medium
 
   * FEATURE: Dangling DNS vulnerability detection for subdomain takeover risks

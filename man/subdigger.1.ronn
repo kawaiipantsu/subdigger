@@ -88,8 +88,27 @@ SubDigger reads configuration from `~/.subdigger/config` in INI format.
     enabled = true
 
     [apis]
+    # 19 API services supported (BufferOver has free tier)
+    bevigil_key =
+    binaryedge_key =
+    c99_key =
+    censys_id =
+    censys_secret =
+    certspotter_key =
+    chaos_key =
+    fullhunt_key =
+    github_token =
+    hunter_key =
+    intelx_key =
+    leakix_key =
+    netlas_key =
+    passivetotal_user =
+    passivetotal_key =
+    securitytrails_key =
     shodan_key =
     virustotal_key =
+    whoisxmlapi_key =
+    zoomeye_key =
 
 ## FILES
 
@@ -187,7 +206,7 @@ JSON output provides structured data with all enrichment fields:
   Attempt DNS zone transfer (AXFR)
 
 * `api`:
-  Query OSINT APIs (Shodan, VirusTotal) - requires API keys in config file
+  Query OSINT APIs (19 sources: BeVigil, BinaryEdge, BufferOver, C99, Censys, CertSpotter, Chaos, FullHunt, GitHub, Hunter, IntelX, LeakIX, Netlas, PassiveTotal, SecurityTrails, Shodan, VirusTotal, WhoisXMLAPI, ZoomEye) - most require API keys in config file, BufferOver offers free tier
 
 * `recursive`:
   Automatically discovers subdomains from CNAME, NS, and ReverseDNS targets

@@ -198,6 +198,248 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
         }
     }
 
+    // Additional API integrations
+    if ((method_enabled(config, "api") || config->api_key_bevigil) && config->api_key_bevigil && !shutdown_requested) {
+        sd_info("Querying BeVigil API");
+        size_t count = 0;
+        char **results = api_bevigil_query(domain, config->api_key_bevigil, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "bevigil")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_binaryedge) && config->api_key_binaryedge && !shutdown_requested) {
+        sd_info("Querying BinaryEdge API");
+        size_t count = 0;
+        char **results = api_binaryedge_query(domain, config->api_key_binaryedge, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "binaryedge")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    // BufferOver (free, no key required)
+    if (method_enabled(config, "api") && !shutdown_requested) {
+        sd_info("Querying BufferOver API (free)");
+        size_t count = 0;
+        char **results = api_bufferover_query(domain, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "bufferover")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_c99) && config->api_key_c99 && !shutdown_requested) {
+        sd_info("Querying C99 API");
+        size_t count = 0;
+        char **results = api_c99_query(domain, config->api_key_c99, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "c99")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || (config->api_key_censys_id && config->api_key_censys_secret)) &&
+        config->api_key_censys_id && config->api_key_censys_secret && !shutdown_requested) {
+        sd_info("Querying Censys API");
+        size_t count = 0;
+        char **results = api_censys_query(domain, config->api_key_censys_id, config->api_key_censys_secret, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "censys")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_certspotter) && !shutdown_requested) {
+        sd_info("Querying CertSpotter API");
+        size_t count = 0;
+        char **results = api_certspotter_query(domain, config->api_key_certspotter, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "certspotter")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_chaos) && config->api_key_chaos && !shutdown_requested) {
+        sd_info("Querying Chaos API");
+        size_t count = 0;
+        char **results = api_chaos_query(domain, config->api_key_chaos, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "chaos")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_fullhunt) && config->api_key_fullhunt && !shutdown_requested) {
+        sd_info("Querying FullHunt API");
+        size_t count = 0;
+        char **results = api_fullhunt_query(domain, config->api_key_fullhunt, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "fullhunt")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_github) && config->api_key_github && !shutdown_requested) {
+        sd_info("Querying GitHub API");
+        size_t count = 0;
+        char **results = api_github_query(domain, config->api_key_github, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "github")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_hunter) && config->api_key_hunter && !shutdown_requested) {
+        sd_info("Querying Hunter API");
+        size_t count = 0;
+        char **results = api_hunter_query(domain, config->api_key_hunter, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "hunter")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_intelx) && config->api_key_intelx && !shutdown_requested) {
+        sd_info("Querying IntelX API");
+        size_t count = 0;
+        char **results = api_intelx_query(domain, config->api_key_intelx, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "intelx")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_leakix) && config->api_key_leakix && !shutdown_requested) {
+        sd_info("Querying LeakIX API");
+        size_t count = 0;
+        char **results = api_leakix_query(domain, config->api_key_leakix, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "leakix")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_netlas) && config->api_key_netlas && !shutdown_requested) {
+        sd_info("Querying Netlas API");
+        size_t count = 0;
+        char **results = api_netlas_query(domain, config->api_key_netlas, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "netlas")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || (config->api_key_passivetotal_user && config->api_key_passivetotal_key)) &&
+        config->api_key_passivetotal_user && config->api_key_passivetotal_key && !shutdown_requested) {
+        sd_info("Querying PassiveTotal API");
+        size_t count = 0;
+        char **results = api_passivetotal_query(domain, config->api_key_passivetotal_user, config->api_key_passivetotal_key, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "passivetotal")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_securitytrails) && config->api_key_securitytrails && !shutdown_requested) {
+        sd_info("Querying SecurityTrails API");
+        size_t count = 0;
+        char **results = api_securitytrails_query(domain, config->api_key_securitytrails, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "securitytrails")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_whoisxmlapi) && config->api_key_whoisxmlapi && !shutdown_requested) {
+        sd_info("Querying WhoisXMLAPI");
+        size_t count = 0;
+        char **results = api_whoisxmlapi_query(domain, config->api_key_whoisxmlapi, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "whoisxmlapi")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
+    if ((method_enabled(config, "api") || config->api_key_zoomeye) && config->api_key_zoomeye && !shutdown_requested) {
+        sd_info("Querying ZoomEye API");
+        size_t count = 0;
+        char **results = api_zoomeye_query(domain, config->api_key_zoomeye, &count);
+        if (results) {
+            for (size_t i = 0; i < count && !shutdown_requested; i++) {
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, results[i], "zoomeye")) {
+                    total_candidates++;
+                }
+            }
+            api_free_results(results, count);
+        }
+    }
+
     if (method_enabled(config, "bruteforce") && !shutdown_requested) {
         sd_info("Starting bruteforce enumeration");
         bruteforce_generate(ctx);

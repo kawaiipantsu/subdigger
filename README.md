@@ -35,7 +35,7 @@ sudo make install
 
 # Build Debian package
 make deb
-sudo dpkg -i ../subdigger_1.3.0-1_amd64.deb
+sudo dpkg -i ../subdigger_1.4.0-1_amd64.deb
 ```
 
 ### Post-Installation
@@ -103,8 +103,28 @@ format = csv
 enabled = true
 
 [apis]
+# Passive subdomain discovery API keys
+# Free tier available: BufferOver (no key required)
+bevigil_key =
+binaryedge_key =
+c99_key =
+censys_id =
+censys_secret =
+certspotter_key =
+chaos_key =
+fullhunt_key =
+github_token =
+hunter_key =
+intelx_key =
+leakix_key =
+netlas_key =
+passivetotal_user =
+passivetotal_key =
+securitytrails_key =
 shodan_key =
 virustotal_key =
+whoisxmlapi_key =
+zoomeye_key =
 ```
 
 ## Discovery Methods
@@ -113,8 +133,48 @@ virustotal_key =
 - **cert**: Query certificate transparency logs via crt.sh
 - **bruteforce**: Generate and test subdomain permutations (a-z, 0-9, underscore, depth 1-5)
 - **dns**: Attempt DNS zone transfer (AXFR)
-- **api**: Query OSINT APIs (Shodan, VirusTotal) - requires API keys in config file
+- **api**: Query OSINT APIs (19 sources: BeVigil, BinaryEdge, BufferOver, C99, Censys, CertSpotter, Chaos, FullHunt, GitHub, Hunter, IntelX, LeakIX, Netlas, PassiveTotal, SecurityTrails, Shodan, VirusTotal, WhoisXMLAPI, ZoomEye) - most require API keys in config file
 - **recursive**: Automatically discovers subdomains from CNAME, NS, and ReverseDNS targets
+
+## API Services
+
+SubDigger supports 19 passive subdomain discovery APIs. Configure API keys in `~/.subdigger/config` under the `[apis]` section.
+
+### Free Tier Services (No API Key Required)
+- **BufferOver** - Free passive DNS replication service
+
+### API Key Required
+
+| Service | Get API Key | Notes |
+|---------|-------------|-------|
+| **BeVigil** | https://bevigil.com/osint-api | Mobile app security platform |
+| **BinaryEdge** | https://www.binaryedge.io/ | Internet scanning platform |
+| **C99.nl** | https://api.c99.nl/ | Multi-purpose API service |
+| **Censys** | https://search.censys.io/api | Requires both `censys_id` and `censys_secret` |
+| **CertSpotter** | https://sslmate.com/certspotter/api/ | Certificate transparency monitoring |
+| **Chaos** | https://chaos.projectdiscovery.io/ | ProjectDiscovery's subdomain dataset |
+| **FullHunt** | https://fullhunt.io/ | Attack surface management |
+| **GitHub** | https://github.com/settings/tokens | Code search for subdomains |
+| **Hunter** | https://hunter.io/api | Email and domain intelligence |
+| **IntelX** | https://intelx.io/ | Intelligence data search engine |
+| **LeakIX** | https://leakix.net/ | Internet-wide asset discovery |
+| **Netlas** | https://netlas.io/ | Internet assets search |
+| **PassiveTotal** | https://community.riskiq.com/ | Requires both `passivetotal_user` and `passivetotal_key` |
+| **SecurityTrails** | https://securitytrails.com/ | DNS and domain intelligence |
+| **Shodan** | https://account.shodan.io/ | Internet device search engine |
+| **VirusTotal** | https://www.virustotal.com/gui/my-apikey | URL and file analysis |
+| **WhoisXMLAPI** | https://whoisxmlapi.com/ | Domain and IP intelligence |
+| **ZoomEye** | https://www.zoomeye.org/ | Cyberspace search engine |
+
+**Usage:** Add API keys to your config file and use `--methods api` or enable the `api` method in the config.
+
+```bash
+# Query all configured APIs
+subdigger -d example.com -m api
+
+# Combine with other methods
+subdigger -d example.com -m wordlist,cert,api
+```
 
 ## Output Formats
 

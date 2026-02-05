@@ -8,7 +8,7 @@
 #include <signal.h>
 #include "../include/subdigger.h"
 
-#define VERSION "1.3.0"
+#define VERSION "1.4.0"
 
 static subdigger_ctx_t *global_ctx = NULL;
 
@@ -118,8 +118,47 @@ static void ensure_directories(void) {
             fprintf(fp, "[cache]\n");
             fprintf(fp, "enabled = true\n\n");
             fprintf(fp, "[apis]\n");
-            fprintf(fp, "shodan_key = \n");
-            fprintf(fp, "virustotal_key = \n");
+            fprintf(fp, "# Add API keys for passive subdomain discovery services\n");
+            fprintf(fp, "# Free tier available (no key required): BufferOver\n");
+            fprintf(fp, "# Get keys from respective service providers\n\n");
+            fprintf(fp, "# BeVigil - https://bevigil.com/osint-api\n");
+            fprintf(fp, "bevigil_key = \n\n");
+            fprintf(fp, "# BinaryEdge - https://www.binaryedge.io/\n");
+            fprintf(fp, "binaryedge_key = \n\n");
+            fprintf(fp, "# C99.nl - https://api.c99.nl/\n");
+            fprintf(fp, "c99_key = \n\n");
+            fprintf(fp, "# Censys - https://search.censys.io/api\n");
+            fprintf(fp, "censys_id = \n");
+            fprintf(fp, "censys_secret = \n\n");
+            fprintf(fp, "# CertSpotter - https://sslmate.com/certspotter/api/\n");
+            fprintf(fp, "certspotter_key = \n\n");
+            fprintf(fp, "# Chaos - https://chaos.projectdiscovery.io/\n");
+            fprintf(fp, "chaos_key = \n\n");
+            fprintf(fp, "# FullHunt - https://fullhunt.io/\n");
+            fprintf(fp, "fullhunt_key = \n\n");
+            fprintf(fp, "# GitHub - https://github.com/settings/tokens\n");
+            fprintf(fp, "github_token = \n\n");
+            fprintf(fp, "# Hunter - https://hunter.io/api\n");
+            fprintf(fp, "hunter_key = \n\n");
+            fprintf(fp, "# IntelX - https://intelx.io/\n");
+            fprintf(fp, "intelx_key = \n\n");
+            fprintf(fp, "# LeakIX - https://leakix.net/\n");
+            fprintf(fp, "leakix_key = \n\n");
+            fprintf(fp, "# Netlas - https://netlas.io/\n");
+            fprintf(fp, "netlas_key = \n\n");
+            fprintf(fp, "# PassiveTotal - https://community.riskiq.com/\n");
+            fprintf(fp, "passivetotal_user = \n");
+            fprintf(fp, "passivetotal_key = \n\n");
+            fprintf(fp, "# SecurityTrails - https://securitytrails.com/\n");
+            fprintf(fp, "securitytrails_key = \n\n");
+            fprintf(fp, "# Shodan - https://account.shodan.io/\n");
+            fprintf(fp, "shodan_key = \n\n");
+            fprintf(fp, "# VirusTotal - https://www.virustotal.com/gui/my-apikey\n");
+            fprintf(fp, "virustotal_key = \n\n");
+            fprintf(fp, "# WhoisXMLAPI - https://whoisxmlapi.com/\n");
+            fprintf(fp, "whoisxmlapi_key = \n\n");
+            fprintf(fp, "# ZoomEye - https://www.zoomeye.org/\n");
+            fprintf(fp, "zoomeye_key = \n");
             fclose(fp);
             chmod(path, 0600);
         }

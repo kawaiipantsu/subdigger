@@ -72,8 +72,27 @@ void config_free(config_t *config) {
     }
 
     free(config->output_format);
+    // Free API keys
+    free(config->api_key_bevigil);
+    free(config->api_key_binaryedge);
+    free(config->api_key_c99);
+    free(config->api_key_censys_id);
+    free(config->api_key_censys_secret);
+    free(config->api_key_certspotter);
+    free(config->api_key_chaos);
+    free(config->api_key_fullhunt);
+    free(config->api_key_github);
+    free(config->api_key_hunter);
+    free(config->api_key_intelx);
+    free(config->api_key_leakix);
+    free(config->api_key_netlas);
+    free(config->api_key_passivetotal_user);
+    free(config->api_key_passivetotal_key);
+    free(config->api_key_securitytrails);
     free(config->api_key_shodan);
     free(config->api_key_virustotal);
+    free(config->api_key_whoisxmlapi);
+    free(config->api_key_zoomeye);
     free(config->target_domain);
     free(config->output_file);
 }
@@ -222,12 +241,66 @@ int config_load(config_t *config, const char *path) {
                 config->cache_enabled = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
             }
         } else if (strcmp(section, "apis") == 0) {
-            if (strcmp(key, "shodan_key") == 0 && strlen(value) > 0) {
+            if (strcmp(key, "bevigil_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_bevigil);
+                config->api_key_bevigil = strdup(value);
+            } else if (strcmp(key, "binaryedge_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_binaryedge);
+                config->api_key_binaryedge = strdup(value);
+            } else if (strcmp(key, "c99_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_c99);
+                config->api_key_c99 = strdup(value);
+            } else if (strcmp(key, "censys_id") == 0 && strlen(value) > 0) {
+                free(config->api_key_censys_id);
+                config->api_key_censys_id = strdup(value);
+            } else if (strcmp(key, "censys_secret") == 0 && strlen(value) > 0) {
+                free(config->api_key_censys_secret);
+                config->api_key_censys_secret = strdup(value);
+            } else if (strcmp(key, "certspotter_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_certspotter);
+                config->api_key_certspotter = strdup(value);
+            } else if (strcmp(key, "chaos_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_chaos);
+                config->api_key_chaos = strdup(value);
+            } else if (strcmp(key, "fullhunt_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_fullhunt);
+                config->api_key_fullhunt = strdup(value);
+            } else if (strcmp(key, "github_token") == 0 && strlen(value) > 0) {
+                free(config->api_key_github);
+                config->api_key_github = strdup(value);
+            } else if (strcmp(key, "hunter_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_hunter);
+                config->api_key_hunter = strdup(value);
+            } else if (strcmp(key, "intelx_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_intelx);
+                config->api_key_intelx = strdup(value);
+            } else if (strcmp(key, "leakix_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_leakix);
+                config->api_key_leakix = strdup(value);
+            } else if (strcmp(key, "netlas_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_netlas);
+                config->api_key_netlas = strdup(value);
+            } else if (strcmp(key, "passivetotal_user") == 0 && strlen(value) > 0) {
+                free(config->api_key_passivetotal_user);
+                config->api_key_passivetotal_user = strdup(value);
+            } else if (strcmp(key, "passivetotal_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_passivetotal_key);
+                config->api_key_passivetotal_key = strdup(value);
+            } else if (strcmp(key, "securitytrails_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_securitytrails);
+                config->api_key_securitytrails = strdup(value);
+            } else if (strcmp(key, "shodan_key") == 0 && strlen(value) > 0) {
                 free(config->api_key_shodan);
                 config->api_key_shodan = strdup(value);
             } else if (strcmp(key, "virustotal_key") == 0 && strlen(value) > 0) {
                 free(config->api_key_virustotal);
                 config->api_key_virustotal = strdup(value);
+            } else if (strcmp(key, "whoisxmlapi_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_whoisxmlapi);
+                config->api_key_whoisxmlapi = strdup(value);
+            } else if (strcmp(key, "zoomeye_key") == 0 && strlen(value) > 0) {
+                free(config->api_key_zoomeye);
+                config->api_key_zoomeye = strdup(value);
             }
         }
     }
