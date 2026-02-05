@@ -57,7 +57,7 @@ int cache_load(const char *domain, result_buffer_t *buffer) {
         return 0;
     }
 
-    char line[2048];
+    char line[4096];
     int count = 0;
 
     while (fgets(line, sizeof(line), fp)) {
@@ -65,12 +65,14 @@ int cache_load(const char *domain, result_buffer_t *buffer) {
         memset(&result, 0, sizeof(result));
 
         char txt_present[8];
-        if (sscanf(line, "%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%[^,],%s",
+        // Simple cache format - just store basic fields
+        // Full format with GeoIP data would be too complex for simple cache
+        if (sscanf(line, "%255[^,],%45[^,],%255[^,],%255[^,],%7[^,],%63[^,],%255s",
                    result.subdomain, result.a_record, result.ns_record,
                    result.mx_record, txt_present, result.tld,
-                   result.country_code, result.source, result.cname_record) >= 8) {
+                   result.source) >= 6) {
 
-            result.has_txt = (strcmp(txt_present, "Yes") == 0);
+            result.has_txt = (strcmp(txt_present, "true") == 0 || strcmp(txt_present, "Yes") == 0);
             result.timestamp = now;
 
             result_buffer_add(buffer, &result);
@@ -120,16 +122,15 @@ int cache_save(const char *domain, const result_buffer_t *buffer) {
     for (size_t i = 0; i < buffer->count; i++) {
         const subdomain_result_t *result = &buffer->results[i];
 
-        fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+        // Simple cache format - basic fields only
+        fprintf(fp, "%s,%s,%s,%s,%s,%s,%s\n",
                 result->subdomain,
                 result->a_record,
                 result->ns_record,
                 result->mx_record,
-                result->has_txt ? "Yes" : "No",
+                result->has_txt ? "true" : "false",
                 result->tld,
-                result->country_code,
-                result->source,
-                result->cname_record);
+                result->source);
     }
 
     flock(fd, LOCK_UN);

@@ -1,8 +1,11 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <errno.h>
+#include <time.h>
 #include <ares.h>
 #include <arpa/nameser.h>
 #include "../include/subdigger.h"
@@ -69,6 +72,20 @@ bool task_queue_push(task_queue_t *queue, const char *subdomain, const char *sou
     pthread_mutex_unlock(&queue->mutex);
 
     return true;
+}
+
+bool task_queue_push_unique(task_queue_t *queue, discovered_buffer_t *tracker, const char *subdomain, const char *source) {
+    if (!queue || !tracker || !subdomain || !source) {
+        return false;
+    }
+
+    // Check if subdomain has already been queued
+    if (!discovered_buffer_add(tracker, subdomain)) {
+        return false; // Already exists or error
+    }
+
+    // If it's new, add to task queue
+    return task_queue_push(queue, subdomain, source);
 }
 
 bool task_queue_pop(task_queue_t *queue, task_item_t *item) {
@@ -145,6 +162,15 @@ bool result_buffer_add(result_buffer_t *buffer, const subdomain_result_t *result
 
     pthread_mutex_lock(&buffer->mutex);
 
+    // Check for duplicate subdomain
+    for (size_t i = 0; i < buffer->count; i++) {
+        if (strcmp(buffer->results[i].subdomain, result->subdomain) == 0 &&
+            strcmp(buffer->results[i].domain, result->domain) == 0) {
+            pthread_mutex_unlock(&buffer->mutex);
+            return true; // Already exists, return success without adding
+        }
+    }
+
     if (buffer->count >= buffer->capacity) {
         size_t new_capacity = buffer->capacity * 2;
         subdomain_result_t *new_results = realloc(buffer->results, new_capacity * sizeof(subdomain_result_t));
@@ -164,10 +190,179 @@ bool result_buffer_add(result_buffer_t *buffer, const subdomain_result_t *result
     return true;
 }
 
+discovered_buffer_t *discovered_buffer_init(size_t capacity) {
+    discovered_buffer_t *buffer = malloc(sizeof(discovered_buffer_t));
+    if (!buffer) {
+        return NULL;
+    }
+
+    buffer->subdomains = malloc(capacity * sizeof(char *));
+    if (!buffer->subdomains) {
+        free(buffer);
+        return NULL;
+    }
+
+    pthread_mutex_init(&buffer->mutex, NULL);
+    buffer->count = 0;
+    buffer->capacity = capacity;
+
+    return buffer;
+}
+
+void discovered_buffer_destroy(discovered_buffer_t *buffer) {
+    if (!buffer) {
+        return;
+    }
+
+    for (size_t i = 0; i < buffer->count; i++) {
+        free(buffer->subdomains[i]);
+    }
+    free(buffer->subdomains);
+    pthread_mutex_destroy(&buffer->mutex);
+    free(buffer);
+}
+
+bool discovered_buffer_add(discovered_buffer_t *buffer, const char *subdomain) {
+    if (!buffer || !subdomain) {
+        return false;
+    }
+
+    pthread_mutex_lock(&buffer->mutex);
+
+    // Check for duplicates
+    for (size_t i = 0; i < buffer->count; i++) {
+        if (strcmp(buffer->subdomains[i], subdomain) == 0) {
+            pthread_mutex_unlock(&buffer->mutex);
+            return true;
+        }
+    }
+
+    if (buffer->count >= buffer->capacity) {
+        size_t new_capacity = buffer->capacity * 2;
+        char **new_subdomains = realloc(buffer->subdomains, new_capacity * sizeof(char *));
+        if (!new_subdomains) {
+            pthread_mutex_unlock(&buffer->mutex);
+            return false;
+        }
+        buffer->subdomains = new_subdomains;
+        buffer->capacity = new_capacity;
+    }
+
+    buffer->subdomains[buffer->count] = strdup(subdomain);
+    if (!buffer->subdomains[buffer->count]) {
+        pthread_mutex_unlock(&buffer->mutex);
+        return false;
+    }
+    buffer->count++;
+
+    pthread_mutex_unlock(&buffer->mutex);
+
+    return true;
+}
+
+void discovered_buffer_clear(discovered_buffer_t *buffer) {
+    if (!buffer) {
+        return;
+    }
+
+    pthread_mutex_lock(&buffer->mutex);
+
+    for (size_t i = 0; i < buffer->count; i++) {
+        free(buffer->subdomains[i]);
+    }
+    buffer->count = 0;
+
+    pthread_mutex_unlock(&buffer->mutex);
+}
+
 typedef struct {
     subdigger_ctx_t *ctx;
     size_t server_idx;
 } worker_thread_args_t;
+
+static void extract_discovered_subdomains(subdigger_ctx_t *ctx, const subdomain_result_t *result) {
+    if (!ctx || !result || !ctx->discovered_buffer || !ctx->config || !ctx->config->target_domain) {
+        return;
+    }
+
+    const char *target_domain = ctx->config->target_domain;
+    size_t target_len = strlen(target_domain);
+
+    // Extract subdomains from CNAME chain (separated by " > ")
+    if (strlen(result->cname_record) > 0) {
+        char cname_copy[MAX_DOMAIN_LEN * 3];
+        safe_strncpy(cname_copy, result->cname_record, sizeof(cname_copy));
+
+        // Split by " > " separator
+        char *saveptr = NULL;
+        char *token = strtok_r(cname_copy, ">", &saveptr);
+        while (token != NULL) {
+            // Trim whitespace
+            while (*token == ' ' || *token == '\t') {
+                token++;
+            }
+
+            size_t len = strlen(token);
+            while (len > 0 && (token[len-1] == ' ' || token[len-1] == '\t' || token[len-1] == '.')) {
+                token[len-1] = '\0';
+                len--;
+            }
+
+            if (len > 0) {
+                // Check if it ends with target domain
+                if (len >= target_len) {
+                    // Check if it's exactly the target domain
+                    if (strcmp(token, target_domain) == 0) {
+                        // Skip - this is the root domain itself
+                        token = strtok_r(NULL, ">", &saveptr);
+                        continue;
+                    }
+
+                    // Check if it ends with .target_domain
+                    if (len > target_len + 1) {
+                        const char *suffix = token + (len - target_len);
+                        const char *dot = token + (len - target_len - 1);
+                        if (*dot == '.' && strcmp(suffix, target_domain) == 0) {
+                            discovered_buffer_add(ctx->discovered_buffer, token);
+                        }
+                    }
+                }
+            }
+
+            token = strtok_r(NULL, ">", &saveptr);
+        }
+    }
+
+    // Extract subdomain from NS record
+    if (strlen(result->ns_record) > 0) {
+        char ns_copy[MAX_DOMAIN_LEN];
+        safe_strncpy(ns_copy, result->ns_record, sizeof(ns_copy));
+
+        size_t len = strlen(ns_copy);
+        // Remove trailing dot if present
+        if (len > 0 && ns_copy[len-1] == '.') {
+            ns_copy[len-1] = '\0';
+            len--;
+        }
+
+        if (len > 0 && len >= target_len) {
+            // Check if it's exactly the target domain
+            if (strcmp(ns_copy, target_domain) == 0) {
+                // Skip - this is the root domain itself
+                return;
+            }
+
+            // Check if it ends with .target_domain
+            if (len > target_len + 1) {
+                const char *suffix = ns_copy + (len - target_len);
+                const char *dot = ns_copy + (len - target_len - 1);
+                if (*dot == '.' && strcmp(suffix, target_domain) == 0) {
+                    discovered_buffer_add(ctx->discovered_buffer, ns_copy);
+                }
+            }
+        }
+    }
+}
 
 static void *worker_thread(void *arg) {
     worker_thread_args_t *args = (worker_thread_args_t *)arg;
@@ -216,6 +411,10 @@ static void *worker_thread(void *arg) {
         subdomain_result_t result;
         memset(&result, 0, sizeof(result));
 
+        if (ctx->config && ctx->config->target_domain) {
+            safe_strncpy(result.domain, ctx->config->target_domain, sizeof(result.domain));
+        }
+
         bool resolved = dns_resolve_full(ctx, item.subdomain, &result, &dns_ctx);
 
         bool include_non_resolving = (strstr(item.source, "crtsh") != NULL ||
@@ -227,6 +426,11 @@ static void *worker_thread(void *arg) {
             safe_strncpy(result.source, item.source, sizeof(result.source));
             result_buffer_add(ctx->result_buffer, &result);
             __sync_add_and_fetch(&ctx->results_found, 1);
+
+            // Extract new subdomains from CNAME and NS records
+            if (resolved) {
+                extract_discovered_subdomains(ctx, &result);
+            }
 
             if (ctx->output_fp) {
                 pthread_mutex_lock(&ctx->output_mutex);
@@ -318,12 +522,111 @@ void thread_pool_destroy(subdigger_ctx_t *ctx) {
 
     task_queue_shutdown(ctx->task_queue);
 
+    time_t join_start = time(NULL);
+    int timeout_per_thread = 3;
+    int completed = 0;
+    int abandoned = 0;
+    int respawned = 0;
+
     for (int i = 0; i < ctx->config->threads; i++) {
-        pthread_join(ctx->threads[i], NULL);
+        time_t now = time(NULL);
+        int remaining = timeout_per_thread - (now - join_start);
+
+        if (remaining <= 0) {
+            pthread_detach(ctx->threads[i]);
+            abandoned++;
+            continue;
+        }
+
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += remaining;
+
+        int ret = pthread_timedjoin_np(ctx->threads[i], NULL, &ts);
+        if (ret == ETIMEDOUT) {
+            pthread_detach(ctx->threads[i]);
+            abandoned++;
+        } else if (ret == 0) {
+            completed++;
+        }
+    }
+
+    if (abandoned > 0) {
+        size_t queue_remaining = 0;
+        pthread_mutex_lock(&ctx->task_queue->mutex);
+        queue_remaining = ctx->task_queue->count;
+        pthread_mutex_unlock(&ctx->task_queue->mutex);
+
+        if (queue_remaining > 0) {
+            sd_warn("Abandoned %d stuck threads with %zu queries remaining, respawning workers", abandoned, queue_remaining);
+
+            size_t respawn_count = (size_t)abandoned < queue_remaining ? (size_t)abandoned : queue_remaining;
+            if (respawn_count > 50) respawn_count = 50;
+
+            pthread_t *respawn_threads = malloc(respawn_count * sizeof(pthread_t));
+            if (respawn_threads) {
+                size_t threads_per_server = respawn_count / ctx->dns_server_count;
+                size_t remaining_threads = respawn_count % ctx->dns_server_count;
+                size_t thread_idx = 0;
+
+                for (size_t server_idx = 0; server_idx < ctx->dns_server_count && thread_idx < respawn_count; server_idx++) {
+                    size_t threads_for_this_server = threads_per_server;
+                    if (remaining_threads > 0) {
+                        threads_for_this_server++;
+                        remaining_threads--;
+                    }
+
+                    for (size_t i = 0; i < threads_for_this_server && thread_idx < respawn_count; i++) {
+                        worker_thread_args_t *args = malloc(sizeof(worker_thread_args_t));
+                        if (args) {
+                            args->ctx = ctx;
+                            args->server_idx = server_idx;
+
+                            if (pthread_create(&respawn_threads[thread_idx], NULL, worker_thread, args) == 0) {
+                                thread_idx++;
+                            } else {
+                                free(args);
+                            }
+                        }
+                    }
+                }
+
+                respawned = thread_idx;
+
+                join_start = time(NULL);
+                size_t respawn_completed = 0;
+
+                for (size_t i = 0; i < (size_t)respawned; i++) {
+                    time_t now = time(NULL);
+                    int remaining_time = timeout_per_thread - (now - join_start);
+
+                    if (remaining_time <= 0) {
+                        pthread_detach(respawn_threads[i]);
+                        continue;
+                    }
+
+                    struct timespec ts;
+                    clock_gettime(CLOCK_REALTIME, &ts);
+                    ts.tv_sec += remaining_time;
+
+                    int ret = pthread_timedjoin_np(respawn_threads[i], NULL, &ts);
+                    if (ret == 0) {
+                        respawn_completed++;
+                    } else {
+                        pthread_detach(respawn_threads[i]);
+                    }
+                }
+
+                free(respawn_threads);
+                sd_info("Respawned %d threads, %zu completed successfully", respawned, respawn_completed);
+            }
+        } else {
+            sd_warn("Abandoned %d stuck threads (no remaining queries to process)", abandoned);
+        }
     }
 
     free(ctx->threads);
     ctx->threads = NULL;
 
-    sd_info("All worker threads completed");
+    sd_info("%d worker threads completed successfully", completed + respawned);
 }

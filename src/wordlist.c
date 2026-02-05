@@ -126,12 +126,18 @@ char **wordlist_discover_auto(size_t *count) {
         search_dirs[1] = user_dir;
     }
 
+    sd_info("Searching for wordlists in:");
+    for (int i = 0; search_dirs[i] != NULL; i++) {
+        sd_info("  - %s", search_dirs[i]);
+    }
+
     for (int i = 0; search_dirs[i] != NULL; i++) {
         DIR *dir = opendir(search_dirs[i]);
         if (!dir) {
             continue;
         }
 
+        size_t dir_count = 0;
         struct dirent *entry;
         while ((entry = readdir(dir)) != NULL) {
             if (entry->d_type != DT_REG && entry->d_type != DT_UNKNOWN) {
@@ -158,19 +164,24 @@ char **wordlist_discover_auto(size_t *count) {
 
             paths[path_count] = strdup(full_path);
             path_count++;
+            dir_count++;
 
             sd_info("Found wordlist: %s", entry->d_name);
+        }
+
+        if (dir_count > 0) {
+            sd_info("Found %zu wordlist(s) in %s", dir_count, search_dirs[i]);
         }
 
         closedir(dir);
     }
 
     if (path_count == 0) {
-        sd_warn("No .txt wordlist files found in search directories");
+        sd_warn("No .txt wordlist files found in any search directory");
         return NULL;
     }
 
-    sd_info("Discovered %zu wordlist file(s)", path_count);
+    sd_info("Total discovered: %zu wordlist file(s)", path_count);
 
     char **combined = wordlist_load_multiple(paths, path_count, count);
 
@@ -252,12 +263,19 @@ void wordlist_load_and_queue_auto(subdigger_ctx_t *ctx, const char *domain, size
         search_dirs[1] = user_dir;
     }
 
+    size_t total_files_loaded = 0;
+    size_t total_words_queued = 0;
+
     for (int i = 0; search_dirs[i] != NULL; i++) {
         DIR *dir = opendir(search_dirs[i]);
         if (!dir) {
+            if (i == 0) {
+                sd_warn("System wordlist directory not found: %s", search_dirs[i]);
+            }
             continue;
         }
 
+        size_t dir_file_count = 0;
         struct dirent *entry;
         while ((entry = readdir(dir)) != NULL) {
             if (entry->d_type != DT_REG && entry->d_type != DT_UNKNOWN) {
@@ -276,7 +294,7 @@ void wordlist_load_and_queue_auto(subdigger_ctx_t *ctx, const char *domain, size
                 continue;
             }
 
-            sd_info("Loading wordlist: %s", entry->d_name);
+            sd_info("Loading wordlist: %s (%s)", entry->d_name, search_dirs[i]);
 
             size_t list_count = 0;
             char **wordlist = wordlist_load(full_path, &list_count);
@@ -285,17 +303,34 @@ void wordlist_load_and_queue_auto(subdigger_ctx_t *ctx, const char *domain, size
                 char source[64];
                 snprintf(source, sizeof(source), "wordlist:%s", entry->d_name);
 
+                size_t queued_from_this_file = 0;
                 for (size_t j = 0; j < list_count && !shutdown_requested; j++) {
                     char subdomain[MAX_DOMAIN_LEN];
                     snprintf(subdomain, sizeof(subdomain), "%s.%s", wordlist[j], domain);
-                    task_queue_push(ctx->task_queue, subdomain, source);
-                    (*total_candidates)++;
+                    if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, subdomain, source)) {
+                        (*total_candidates)++;
+                        queued_from_this_file++;
+                    }
                 }
 
+                total_words_queued += queued_from_this_file;
                 wordlist_free(wordlist, list_count);
+                dir_file_count++;
+                total_files_loaded++;
             }
         }
 
+        if (dir_file_count > 0) {
+            sd_info("Loaded %zu wordlist file(s) from %s", dir_file_count, search_dirs[i]);
+        }
+
         closedir(dir);
+    }
+
+    if (total_files_loaded > 0) {
+        sd_info("Auto-discovery complete: %zu wordlist file(s) loaded, %zu unique candidates queued",
+                total_files_loaded, total_words_queued);
+    } else {
+        sd_warn("No wordlist files found in any search directory");
     }
 }

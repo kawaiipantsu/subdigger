@@ -1,15 +1,32 @@
+subdigger (1.2.7-1) unstable; urgency=high
+
+  * FEATURE: Automatic thread respawning for stuck workers
+  * Checks task queue for remaining items before destroying thread pool
+  * Respawns replacement threads if queries remain after abandoning stuck threads
+  * Respawn count limited to min(abandoned, queue_remaining, 50)
+  * Respawned threads also use 3-second timeout to prevent re-hanging
+  * Ensures all DNS queries are processed even when threads get stuck
+  * Reports respawn statistics: threads created and successfully completed
+  * No DNS checks lost due to stuck threads
+
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 18:10:00 +0000
+
 subdigger (1.2.6-1) unstable; urgency=high
 
-  * CRITICAL: Implemented hard wall-clock timeout for DNS resolutions
-  * Each dns_resolve_full() call has a hard limit of (timeout * 2) seconds
+  * CRITICAL: Fixed thread pool hang on stuck DNS queries
+  * thread_pool_destroy() now uses pthread_timedjoin_np() with 3-second timeout
+  * Stuck threads are detached and abandoned after timeout
+  * Scan completes successfully even with unresponsive DNS servers
+  * Hard wall-clock timeout for DNS resolutions (timeout * 2 seconds)
   * Timeout checks before and after each DNS query type
-  * Forcibly cancels all pending queries if hard timeout exceeded
-  * wait_for_query() uses smaller intervals (50ms/250ms) for faster response
-  * Maximum iteration limit prevents infinite loops
-  * Prevents threads from hanging indefinitely on stuck DNS queries
-  * Ensures all worker threads make progress even with problematic servers
+  * wait_for_query() uses microsecond-precision timing for accurate timeouts
+  * Smaller select() intervals (100ms) for faster timeout detection
+  * Tracks ServFail errors and disables problematic DNS servers
+  * Automatic DNS server re-enable after 10-second cooldown
+  * Threads pause when using disabled server instead of hanging
+  * No more indefinite hangs - scans always complete
 
- -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 18:00:00 +0000
+ -- Kawaiipantsu <thugsred@protonmail.com>  Tue, 04 Feb 2026 18:05:00 +0000
 
 subdigger (1.2.5-1) unstable; urgency=high
 

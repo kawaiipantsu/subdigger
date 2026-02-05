@@ -22,7 +22,6 @@ void config_init(config_t *config) {
     config->quiet_mode = false;
     config->show_progress = true;
     config->auto_wordlists = true;
-    config->enable_bruteforce = false;
 
     config->dns_servers = malloc(7 * sizeof(char *));
     if (config->dns_servers) {
@@ -234,16 +233,6 @@ int config_load(config_t *config, const char *path) {
     }
 
     fclose(fp);
-
-    char *shodan_env = getenv("SHODAN_API_KEY");
-    if (shodan_env && strlen(shodan_env) > 0 && !config->api_key_shodan) {
-        config->api_key_shodan = strdup(shodan_env);
-    }
-
-    char *vt_env = getenv("VIRUSTOTAL_API_KEY");
-    if (vt_env && strlen(vt_env) > 0 && !config->api_key_virustotal) {
-        config->api_key_virustotal = strdup(vt_env);
-    }
 
     return 0;
 }

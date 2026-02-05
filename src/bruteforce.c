@@ -31,7 +31,7 @@ int bruteforce_generate(subdigger_ctx_t *ctx) {
 
                 char subdomain[MAX_DOMAIN_LEN];
                 snprintf(subdomain, sizeof(subdomain), "%s.%s", prefix, ctx->config->target_domain);
-                task_queue_push(ctx->task_queue, subdomain, "bruteforce");
+                task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, subdomain, "bruteforce");
             }
         } else if (d == 2) {
             for (int i = 0; i < charset_len && !shutdown_requested; i++) {
@@ -41,7 +41,7 @@ int bruteforce_generate(subdigger_ctx_t *ctx) {
 
                     char subdomain[MAX_DOMAIN_LEN];
                     snprintf(subdomain, sizeof(subdomain), "%s.%s", prefix, ctx->config->target_domain);
-                    task_queue_push(ctx->task_queue, subdomain, "bruteforce");
+                    task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, subdomain, "bruteforce");
                 }
             }
         } else if (d == 3) {
@@ -53,7 +53,7 @@ int bruteforce_generate(subdigger_ctx_t *ctx) {
 
                         char subdomain[MAX_DOMAIN_LEN];
                         snprintf(subdomain, sizeof(subdomain), "%s.%s", prefix, ctx->config->target_domain);
-                        task_queue_push(ctx->task_queue, subdomain, "bruteforce");
+                        task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, subdomain, "bruteforce");
                     }
                 }
             }

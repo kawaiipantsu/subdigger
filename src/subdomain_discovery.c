@@ -68,6 +68,13 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
 
     size_t total_candidates = 0;
 
+    // Always check the root domain itself first
+    if (!shutdown_requested) {
+        if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, domain, "root-domain")) {
+            total_candidates++;
+        }
+    }
+
     if (method_enabled(config, "cert") && !shutdown_requested) {
         sd_info("Querying certificate transparency logs");
         size_t cert_count = 0;
@@ -75,8 +82,9 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
 
         if (cert_results) {
             for (size_t i = 0; i < cert_count && !shutdown_requested; i++) {
-                task_queue_push(ctx->task_queue, cert_results[i], "crtsh");
-                total_candidates++;
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, cert_results[i], "crtsh")) {
+                    total_candidates++;
+                }
             }
             cert_free_results(cert_results, cert_count);
         }
@@ -100,8 +108,9 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
                 for (size_t i = 0; i < wordlist_count && !shutdown_requested; i++) {
                     char subdomain[MAX_DOMAIN_LEN];
                     snprintf(subdomain, sizeof(subdomain), "%s.%s", wordlist[i], domain);
-                    task_queue_push(ctx->task_queue, subdomain, source);
-                    total_candidates++;
+                    if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, subdomain, source)) {
+                        total_candidates++;
+                    }
                 }
                 wordlist_free(wordlist, wordlist_count);
             }
@@ -116,8 +125,9 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
 
         if (axfr_results) {
             for (size_t i = 0; i < axfr_count && !shutdown_requested; i++) {
-                task_queue_push(ctx->task_queue, axfr_results[i], "dns-axfr");
-                total_candidates++;
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, axfr_results[i], "dns-axfr")) {
+                    total_candidates++;
+                }
             }
             api_free_results(axfr_results, axfr_count);
         }
@@ -130,8 +140,9 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
 
         if (shodan_results) {
             for (size_t i = 0; i < shodan_count && !shutdown_requested; i++) {
-                task_queue_push(ctx->task_queue, shodan_results[i], "shodan");
-                total_candidates++;
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, shodan_results[i], "shodan")) {
+                    total_candidates++;
+                }
             }
             api_free_results(shodan_results, shodan_count);
         }
@@ -144,14 +155,15 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
 
         if (vt_results) {
             for (size_t i = 0; i < vt_count && !shutdown_requested; i++) {
-                task_queue_push(ctx->task_queue, vt_results[i], "virustotal");
-                total_candidates++;
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, vt_results[i], "virustotal")) {
+                    total_candidates++;
+                }
             }
             api_free_results(vt_results, vt_count);
         }
     }
 
-    if (config->enable_bruteforce && !shutdown_requested) {
+    if (method_enabled(config, "bruteforce") && !shutdown_requested) {
         sd_info("Starting bruteforce enumeration");
         bruteforce_generate(ctx);
     }
@@ -168,9 +180,66 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
 
     start_dns_stats_monitor(ctx);
 
-    task_queue_shutdown(ctx->task_queue);
+    // Process candidates iteratively to handle discovered subdomains
+    int iteration = 0;
+    const int max_iterations = 5;  // Prevent infinite loops
+    size_t previous_discovered_count = 0;
 
-    thread_pool_destroy(ctx);
+    while (iteration < max_iterations && !shutdown_requested) {
+        iteration++;
+
+        task_queue_shutdown(ctx->task_queue);
+        thread_pool_destroy(ctx);
+
+        // Check if new subdomains were discovered in this iteration
+        size_t current_discovered_count = 0;
+        pthread_mutex_lock(&ctx->discovered_buffer->mutex);
+        current_discovered_count = ctx->discovered_buffer->count;
+        pthread_mutex_unlock(&ctx->discovered_buffer->mutex);
+
+        size_t new_discovered = current_discovered_count - previous_discovered_count;
+
+        if (new_discovered == 0) {
+            break;
+        }
+
+        sd_info("Iteration %d: discovered %zu new subdomains from CNAME/NS/ReverseDNS records", iteration, new_discovered);
+
+        // Reset queue for next iteration
+        ctx->task_queue->shutdown = false;
+        ctx->task_queue->head = 0;
+        ctx->task_queue->tail = 0;
+        ctx->task_queue->count = 0;
+
+        // Queue only the newly discovered subdomains
+        pthread_mutex_lock(&ctx->discovered_buffer->mutex);
+        for (size_t i = previous_discovered_count; i < current_discovered_count && !shutdown_requested; i++) {
+            // Check if already processed
+            bool already_processed = false;
+            pthread_mutex_lock(&ctx->result_buffer->mutex);
+            for (size_t j = 0; j < ctx->result_buffer->count; j++) {
+                if (strcmp(ctx->result_buffer->results[j].subdomain, ctx->discovered_buffer->subdomains[i]) == 0) {
+                    already_processed = true;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&ctx->result_buffer->mutex);
+
+            if (!already_processed) {
+                task_queue_push(ctx->task_queue, ctx->discovered_buffer->subdomains[i], "recursive-dns");
+            }
+        }
+        pthread_mutex_unlock(&ctx->discovered_buffer->mutex);
+
+        // Update the count for next iteration (don't clear the buffer)
+        previous_discovered_count = current_discovered_count;
+
+        // Restart thread pool
+        if (thread_pool_create(ctx) != 0) {
+            sd_error("Failed to create thread pool for iteration %d", iteration);
+            break;
+        }
+    }
 
     stop_dns_stats_monitor(ctx);
     stop_progress_monitor(ctx);

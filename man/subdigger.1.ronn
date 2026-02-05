@@ -73,14 +73,6 @@ SubDigger reads configuration from `~/.subdigger/config` in INI format.
     shodan_key = YOUR_SHODAN_API_KEY
     virustotal_key = YOUR_VIRUSTOTAL_API_KEY
 
-## ENVIRONMENT
-
-* `SHODAN_API_KEY`:
-  Shodan API key for OSINT queries
-
-* `VIRUSTOTAL_API_KEY`:
-  VirusTotal API key for subdomain lookups
-
 ## FILES
 
 * `~/.subdigger/config`:

@@ -30,13 +30,25 @@ typedef enum {
 
 typedef struct {
     char subdomain[MAX_DOMAIN_LEN];
+    char domain[MAX_DOMAIN_LEN];
     char a_record[MAX_IP_LEN];
-    char cname_record[MAX_DOMAIN_LEN];
+    char aaaa_record[MAX_IP_LEN];
+    char reverse_dns[MAX_DOMAIN_LEN];
+    char cname_record[MAX_DOMAIN_LEN * 3];
+    char cname_ip[MAX_IP_LEN];
     char ns_record[MAX_DOMAIN_LEN];
     char mx_record[MAX_DOMAIN_LEN];
+    bool has_caa;
     bool has_txt;
     char tld[64];
-    char country_code[4];
+    char tld_iso[4];
+    char tld_country[64];
+    char tld_type[32];
+    char tld_manager[256];
+    char ip_iso[4];
+    char ip_country[64];
+    char ip_city[128];
+    char asn_org[256];
     char source[32];
     time_t timestamp;
 } subdomain_result_t;
@@ -59,7 +71,7 @@ typedef struct {
     bool quiet_mode;
     bool show_progress;
     bool auto_wordlists;
-    bool enable_bruteforce;
+    bool get_root_db;
 } config_t;
 
 typedef struct {
@@ -105,11 +117,34 @@ typedef struct {
 } thread_dns_context_t;
 
 typedef struct {
+    char domain[64];
+    char type[32];
+    char manager[256];
+} tld_database_entry_t;
+
+typedef struct {
+    tld_database_entry_t *entries;
+    size_t count;
+    pthread_mutex_t mutex;
+} tld_database_t;
+
+typedef struct {
+    pthread_mutex_t mutex;
+    char **subdomains;
+    size_t count;
+    size_t capacity;
+} discovered_buffer_t;
+
+typedef struct {
     config_t *config;
     task_queue_t *task_queue;
     result_buffer_t *result_buffer;
+    discovered_buffer_t *discovered_buffer;
     pthread_t *threads;
     void *geoip_db;
+    void *geoip_city_db;
+    void *geoip_asn_db;
+    tld_database_t *tld_db;
     dns_server_stats_t *dns_servers;
     size_t dns_server_count;
     pthread_mutex_t geoip_mutex;
@@ -148,12 +183,18 @@ bool validate_file_path(const char *path);
 task_queue_t *task_queue_init(size_t capacity);
 void task_queue_destroy(task_queue_t *queue);
 bool task_queue_push(task_queue_t *queue, const char *subdomain, const char *source);
+bool task_queue_push_unique(task_queue_t *queue, discovered_buffer_t *tracker, const char *subdomain, const char *source);
 bool task_queue_pop(task_queue_t *queue, task_item_t *item);
 void task_queue_shutdown(task_queue_t *queue);
 
 result_buffer_t *result_buffer_init(size_t capacity);
 void result_buffer_destroy(result_buffer_t *buffer);
 bool result_buffer_add(result_buffer_t *buffer, const subdomain_result_t *result);
+
+discovered_buffer_t *discovered_buffer_init(size_t capacity);
+void discovered_buffer_destroy(discovered_buffer_t *buffer);
+bool discovered_buffer_add(discovered_buffer_t *buffer, const char *subdomain);
+void discovered_buffer_clear(discovered_buffer_t *buffer);
 
 int thread_pool_create(subdigger_ctx_t *ctx);
 void thread_pool_destroy(subdigger_ctx_t *ctx);
@@ -166,7 +207,14 @@ void stop_dns_stats_monitor(subdigger_ctx_t *ctx);
 
 int geoip_init(subdigger_ctx_t *ctx);
 void geoip_cleanup(subdigger_ctx_t *ctx);
-void geoip_lookup(subdigger_ctx_t *ctx, const char *ip, char *country_code);
+void geoip_lookup(subdigger_ctx_t *ctx, const char *ip, subdomain_result_t *result);
+void tld_lookup_country(const char *tld, char *iso_code, char *country_name);
+
+int tld_database_init(subdigger_ctx_t *ctx, bool force_update);
+void tld_database_cleanup(subdigger_ctx_t *ctx);
+void tld_database_lookup(subdigger_ctx_t *ctx, const char *tld, char *type, char *manager);
+int tld_database_fetch_and_parse(const char *output_path);
+const char *tld_database_get_path(void);
 
 char **wordlist_load(const char *path, size_t *count);
 void wordlist_free(char **wordlist, size_t count);

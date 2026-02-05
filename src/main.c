@@ -8,7 +8,7 @@
 #include <signal.h>
 #include "../include/subdigger.h"
 
-#define VERSION "1.2.6"
+#define VERSION "1.3.0"
 
 static subdigger_ctx_t *global_ctx = NULL;
 
@@ -31,24 +31,23 @@ static void print_help(const char *program_name) {
     printf("  -q, --quiet               Quiet mode: only output data (no logs)\n");
     printf("  --no-progress             Disable progress reporting\n");
     printf("  --no-auto-wordlists       Disable automatic wordlist discovery (default: enabled)\n");
-    printf("  --bruteforce              Enable bruteforce subdomain generation\n");
     printf("  --bruteforce-depth <n>    Bruteforce depth 1-5 (default: 3, includes a-z0-9_)\n");
+    printf("                            Note: Also add 'bruteforce' to --methods to enable\n");
     printf("  --no-cache                Disable caching\n");
+    printf("  --get-root-db             Fetch and update IANA TLD database\n");
     printf("  -h, --help                Show this help message\n");
     printf("  -v, --version             Show version information\n\n");
     printf("Examples:\n");
     printf("  %s -d example.com\n", program_name);
     printf("  %s -d example.com -f json -o results.json\n", program_name);
-    printf("  %s -d example.com --bruteforce --bruteforce-depth 4\n", program_name);
+    printf("  %s -d example.com -m bruteforce --bruteforce-depth 4\n", program_name);
+    printf("  %s -d example.com -m wordlist,cert,bruteforce\n", program_name);
     printf("  %s -d example.com -q | grep -i admin\n", program_name);
     printf("  %s -d example.com -w custom.txt\n\n", program_name);
     printf("Configuration:\n");
     printf("  Config file: ~/.subdigger/config\n");
     printf("  Wordlists:   ~/.subdigger/wordlists/\n");
     printf("  Cache:       ~/.subdigger/cache/\n\n");
-    printf("Environment Variables:\n");
-    printf("  SHODAN_API_KEY         Shodan API key\n");
-    printf("  VIRUSTOTAL_API_KEY     VirusTotal API key\n\n");
 }
 
 static void signal_handler(int signum) {
@@ -138,9 +137,9 @@ int main(int argc, char *argv[]) {
         {"quiet",             no_argument,       0, 'q'},
         {"no-progress",       no_argument,       0, 'P'},
         {"no-auto-wordlists", no_argument,       0, 'N'},
-        {"bruteforce",        no_argument,       0, 'B'},
         {"bruteforce-depth",  required_argument, 0, 'D'},
         {"no-cache",          no_argument,       0, 'n'},
+        {"get-root-db",       no_argument,       0, 'G'},
         {"help",              no_argument,       0, 'h'},
         {"version",           no_argument,       0, 'v'},
         {0, 0, 0, 0}
@@ -211,9 +210,6 @@ int main(int argc, char *argv[]) {
             case 'N':
                 config.auto_wordlists = false;
                 break;
-            case 'B':
-                config.enable_bruteforce = true;
-                break;
             case 'D':
                 config.bruteforce_depth = atoi(optarg);
                 if (config.bruteforce_depth < 1 || config.bruteforce_depth > MAX_BRUTEFORCE_DEPTH) {
@@ -221,10 +217,12 @@ int main(int argc, char *argv[]) {
                     config_free(&config);
                     return 1;
                 }
-                config.enable_bruteforce = true;
                 break;
             case 'n':
                 config.cache_enabled = false;
+                break;
+            case 'G':
+                config.get_root_db = true;
                 break;
             case 'h':
                 print_help(argv[0]);
@@ -238,6 +236,27 @@ int main(int argc, char *argv[]) {
                 print_help(argv[0]);
                 config_free(&config);
                 return 1;
+        }
+    }
+
+    // Handle --get-root-db flag (can run standalone)
+    if (config.get_root_db) {
+        const char *db_path = tld_database_get_path();
+        if (!db_path) {
+            sd_error("Failed to determine TLD database path");
+            config_free(&config);
+            return 1;
+        }
+
+        sd_info("Fetching IANA root database...");
+        if (tld_database_fetch_and_parse(db_path) == 0) {
+            sd_info("TLD database updated successfully: %s", db_path);
+            config_free(&config);
+            return 0;
+        } else {
+            sd_error("Failed to fetch/parse IANA root database");
+            config_free(&config);
+            return 1;
         }
     }
 
@@ -305,8 +324,21 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    ctx.discovered_buffer = discovered_buffer_init(1000);
+    if (!ctx.discovered_buffer) {
+        sd_error("Failed to initialize discovered buffer");
+        result_buffer_destroy(ctx.result_buffer);
+        task_queue_destroy(ctx.task_queue);
+        if (ctx.output_fp && ctx.output_fp != stdout) fclose(ctx.output_fp);
+        pthread_mutex_destroy(&ctx.output_mutex);
+        pthread_mutex_destroy(&ctx.geoip_mutex);
+        config_free(&config);
+        return 1;
+    }
+
     if (dns_init(&ctx) != 0) {
         sd_error("Failed to initialize DNS resolver");
+        discovered_buffer_destroy(ctx.discovered_buffer);
         result_buffer_destroy(ctx.result_buffer);
         task_queue_destroy(ctx.task_queue);
         if (ctx.output_fp && ctx.output_fp != stdout) fclose(ctx.output_fp);
@@ -317,6 +349,7 @@ int main(int argc, char *argv[]) {
     }
 
     geoip_init(&ctx);
+    tld_database_init(&ctx, false);
 
     sd_info("Starting subdomain discovery for %s", config.target_domain);
 
@@ -324,6 +357,8 @@ int main(int argc, char *argv[]) {
         sd_error("Failed to create thread pool");
         dns_cleanup(&ctx);
         geoip_cleanup(&ctx);
+        tld_database_cleanup(&ctx);
+        discovered_buffer_destroy(ctx.discovered_buffer);
         result_buffer_destroy(ctx.result_buffer);
         task_queue_destroy(ctx.task_queue);
         if (ctx.output_fp && ctx.output_fp != stdout) fclose(ctx.output_fp);
@@ -339,6 +374,8 @@ int main(int argc, char *argv[]) {
         sd_error("Subdomain discovery failed");
         dns_cleanup(&ctx);
         geoip_cleanup(&ctx);
+        tld_database_cleanup(&ctx);
+        discovered_buffer_destroy(ctx.discovered_buffer);
         result_buffer_destroy(ctx.result_buffer);
         task_queue_destroy(ctx.task_queue);
         if (ctx.output_fp && ctx.output_fp != stdout) fclose(ctx.output_fp);
@@ -357,6 +394,8 @@ int main(int argc, char *argv[]) {
 
     dns_cleanup(&ctx);
     geoip_cleanup(&ctx);
+    tld_database_cleanup(&ctx);
+    discovered_buffer_destroy(ctx.discovered_buffer);
     result_buffer_destroy(ctx.result_buffer);
     task_queue_destroy(ctx.task_queue);
 

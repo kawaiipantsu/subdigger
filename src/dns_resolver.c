@@ -116,19 +116,64 @@ static void dns_callback_txt(void *arg, int status, int timeouts __attribute__((
     result->completed = true;
 }
 
+static void dns_callback_caa(void *arg, int status, int timeouts __attribute__((unused)), unsigned char *abuf, int alen) {
+    dns_query_result_t *result = (dns_query_result_t *)arg;
+
+    if (status == ARES_SUCCESS && abuf) {
+        struct ares_caa_reply *caa_reply = NULL;
+        if (ares_parse_caa_reply(abuf, alen, &caa_reply) == ARES_SUCCESS) {
+            if (caa_reply && caa_reply->value) {
+                char caa_str[512] = {0};
+                int offset = 0;
+                struct ares_caa_reply *current = caa_reply;
+                while (current && offset < 490) {
+                    if (offset > 0) {
+                        caa_str[offset++] = ';';
+                        caa_str[offset++] = ' ';
+                    }
+                    int written = snprintf(caa_str + offset, sizeof(caa_str) - offset,
+                                          "%s \"%s\"", current->property ? (const char*)current->property : "",
+                                          current->value ? (const char*)current->value : "");
+                    if (written > 0 && written < (int)(sizeof(caa_str) - offset)) {
+                        offset += written;
+                    }
+                    current = current->next;
+                }
+                safe_strncpy(result->result, caa_str, sizeof(result->result));
+                result->has_result = true;
+                ares_free_data(caa_reply);
+            }
+        }
+    }
+
+    result->completed = true;
+}
+
+static void dns_callback_ptr(void *arg, int status, int timeouts __attribute__((unused)), struct hostent *host) {
+    dns_query_result_t *result = (dns_query_result_t *)arg;
+
+    if (status == ARES_SUCCESS && host && host->h_name) {
+        safe_strncpy(result->result, host->h_name, sizeof(result->result));
+        result->has_result = true;
+    }
+
+    result->completed = true;
+}
+
 static void wait_for_query(ares_channel channel, dns_query_result_t *result, int timeout_sec) {
     struct timeval tv, *tvp;
     fd_set read_fds, write_fds;
     int nfds;
-    time_t start_time = time(NULL);
-    int iterations = 0;
-    int max_iterations = timeout_sec * 4;
+    struct timeval abs_start;
+    gettimeofday(&abs_start, NULL);
+    long timeout_usec = timeout_sec * 1000000L;
 
-    while (!result->completed && !shutdown_requested && iterations < max_iterations) {
-        iterations++;
+    while (!result->completed && !shutdown_requested) {
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        long elapsed_usec = (now.tv_sec - abs_start.tv_sec) * 1000000L + (now.tv_usec - abs_start.tv_usec);
 
-        time_t now = time(NULL);
-        if (now - start_time >= timeout_sec) {
+        if (elapsed_usec >= timeout_usec) {
             break;
         }
 
@@ -140,9 +185,10 @@ static void wait_for_query(ares_channel channel, dns_query_result_t *result, int
             tv.tv_sec = 0;
             tv.tv_usec = 50000;
             tvp = &tv;
+            usleep(50000);
         } else {
             tv.tv_sec = 0;
-            tv.tv_usec = 250000;
+            tv.tv_usec = 100000;
             tvp = &tv;
             select(nfds, &read_fds, &write_fds, NULL, tvp);
         }
@@ -223,13 +269,30 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
     int timeout = ctx->config ? ctx->config->timeout : DEFAULT_TIMEOUT;
     int hard_timeout = timeout * 2;
 
-    safe_strncpy(result->subdomain, subdomain, sizeof(result->subdomain));
-    safe_strncpy(result->a_record, "N/A", sizeof(result->a_record));
-    safe_strncpy(result->cname_record, "N/A", sizeof(result->cname_record));
-    safe_strncpy(result->ns_record, "N/A", sizeof(result->ns_record));
-    safe_strncpy(result->mx_record, "N/A", sizeof(result->mx_record));
+    // If subdomain matches the root domain, leave subdomain field empty
+    if (ctx->config && ctx->config->target_domain && strcmp(subdomain, ctx->config->target_domain) == 0) {
+        safe_strncpy(result->subdomain, "", sizeof(result->subdomain));
+    } else {
+        safe_strncpy(result->subdomain, subdomain, sizeof(result->subdomain));
+    }
+
+    safe_strncpy(result->a_record, "", sizeof(result->a_record));
+    safe_strncpy(result->aaaa_record, "", sizeof(result->aaaa_record));
+    safe_strncpy(result->reverse_dns, "", sizeof(result->reverse_dns));
+    safe_strncpy(result->cname_record, "", sizeof(result->cname_record));
+    safe_strncpy(result->cname_ip, "", sizeof(result->cname_ip));
+    safe_strncpy(result->ns_record, "", sizeof(result->ns_record));
+    safe_strncpy(result->mx_record, "", sizeof(result->mx_record));
+    result->has_caa = false;
     result->has_txt = false;
-    safe_strncpy(result->country_code, "N/A", sizeof(result->country_code));
+    safe_strncpy(result->tld_iso, "", sizeof(result->tld_iso));
+    safe_strncpy(result->tld_country, "", sizeof(result->tld_country));
+    safe_strncpy(result->tld_type, "", sizeof(result->tld_type));
+    safe_strncpy(result->tld_manager, "", sizeof(result->tld_manager));
+    safe_strncpy(result->ip_iso, "", sizeof(result->ip_iso));
+    safe_strncpy(result->ip_country, "", sizeof(result->ip_country));
+    safe_strncpy(result->ip_city, "", sizeof(result->ip_city));
+    safe_strncpy(result->asn_org, "", sizeof(result->asn_org));
     result->timestamp = time(NULL);
 
     extract_tld(subdomain, result->tld, sizeof(result->tld));
@@ -239,6 +302,7 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
         return false;
     }
 
+    // Query A record
     dns_query_result_t a_result = {false, false, false, ""};
     ares_gethostbyname(channel, subdomain, AF_INET, dns_callback_a, &a_result);
     wait_for_query(channel, &a_result, timeout);
@@ -260,22 +324,22 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
         return false;
     }
 
-    if (!a_result.has_result) {
+    if (a_result.has_result) {
+        safe_strncpy(result->a_record, a_result.result, sizeof(result->a_record));
+    }
+
+    // Query AAAA record (separately, not fallback)
+    if (time(NULL) - wall_start < hard_timeout) {
+        dns_query_result_t aaaa_result = {false, false, false, ""};
+        ares_gethostbyname(channel, subdomain, AF_INET6, dns_callback_a, &aaaa_result);
+        wait_for_query(channel, &aaaa_result, timeout);
+
         if (time(NULL) - wall_start >= hard_timeout) {
             ares_cancel(channel);
-            return false;
+            return a_result.has_result;
         }
 
-        dns_query_result_t a6_result = {false, false, false, ""};
-        ares_gethostbyname(channel, subdomain, AF_INET6, dns_callback_a, &a6_result);
-        wait_for_query(channel, &a6_result, timeout);
-
-        if (time(NULL) - wall_start >= hard_timeout) {
-            ares_cancel(channel);
-            return false;
-        }
-
-        if (a6_result.servfail) {
+        if (aaaa_result.servfail) {
             __sync_add_and_fetch(&server->servfails, 1);
             if (server->servfails >= 3 && !server->disabled) {
                 server->disabled = true;
@@ -284,29 +348,112 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
                     sd_warn("DNS server %s disabled due to ServFail errors (will retry in 10s)", server->server);
                 }
             }
-            return false;
+            return a_result.has_result;
         }
 
-        if (a6_result.has_result) {
-            safe_strncpy(result->a_record, a6_result.result, sizeof(result->a_record));
-            a_result.has_result = true;
+        if (aaaa_result.has_result) {
+            safe_strncpy(result->aaaa_record, aaaa_result.result, sizeof(result->aaaa_record));
         }
-    } else {
-        safe_strncpy(result->a_record, a_result.result, sizeof(result->a_record));
     }
 
     bool has_a_record = a_result.has_result;
+
+    // Reverse DNS lookup for A record
+    if (has_a_record && result->a_record[0] != '\0' && (time(NULL) - wall_start < hard_timeout)) {
+        struct in_addr addr;
+        if (inet_pton(AF_INET, result->a_record, &addr) == 1) {
+            dns_query_result_t ptr_result = {false, false, false, ""};
+            ares_gethostbyaddr(channel, &addr, sizeof(addr), AF_INET, dns_callback_ptr, &ptr_result);
+            wait_for_query(channel, &ptr_result, timeout);
+
+            if (ptr_result.has_result && ptr_result.result[0] != '\0') {
+                safe_strncpy(result->reverse_dns, ptr_result.result, sizeof(result->reverse_dns));
+
+                // Check if reverse DNS is a subdomain of target domain
+                if (ctx->config && ctx->config->target_domain) {
+                    const char *target_domain = ctx->config->target_domain;
+                    size_t target_len = strlen(target_domain);
+                    size_t ptr_len = strlen(ptr_result.result);
+
+                    // Check if it ends with target domain
+                    if (ptr_len >= target_len) {
+                        const char *domain_part = ptr_result.result + (ptr_len - target_len);
+                        if (strcasecmp(domain_part, target_domain) == 0 &&
+                            (ptr_len == target_len || ptr_result.result[ptr_len - target_len - 1] == '.')) {
+
+                            // Remove trailing dot if present
+                            char clean_hostname[MAX_DOMAIN_LEN];
+                            safe_strncpy(clean_hostname, ptr_result.result, sizeof(clean_hostname));
+                            size_t len = strlen(clean_hostname);
+                            if (len > 0 && clean_hostname[len - 1] == '.') {
+                                clean_hostname[len - 1] = '\0';
+                            }
+
+                            // Check if it's different from current subdomain
+                            if (strcasecmp(clean_hostname, subdomain) != 0) {
+                                // Add to task queue for processing (unique check)
+                                if (ctx->task_queue && ctx->discovered_buffer && ctx->discovery_active) {
+                                    task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, clean_hostname, "rdns");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if (time(NULL) - wall_start >= hard_timeout) {
         ares_cancel(channel);
         return has_a_record;
     }
 
+    // Follow CNAME chain
     dns_query_result_t cname_result = {false, false, false, ""};
     ares_query(channel, subdomain, ns_c_in, ns_t_cname, dns_callback_cname, &cname_result);
     wait_for_query(channel, &cname_result, timeout);
+
     if (cname_result.has_result) {
-        safe_strncpy(result->cname_record, cname_result.result, sizeof(result->cname_record));
+        char cname_chain[MAX_DOMAIN_LEN * 3] = {0};
+        safe_strncpy(cname_chain, cname_result.result, sizeof(cname_chain));
+
+        char current_target[MAX_DOMAIN_LEN];
+        safe_strncpy(current_target, cname_result.result, sizeof(current_target));
+
+        int chain_depth = 0;
+        const int max_chain_depth = 10;
+
+        // Follow the CNAME chain
+        while (chain_depth < max_chain_depth && time(NULL) - wall_start < hard_timeout) {
+            dns_query_result_t next_cname = {false, false, false, ""};
+            ares_query(channel, current_target, ns_c_in, ns_t_cname, dns_callback_cname, &next_cname);
+            wait_for_query(channel, &next_cname, timeout);
+
+            if (next_cname.has_result && strlen(next_cname.result) > 0) {
+                // Add to chain with arrow separator
+                size_t current_len = strlen(cname_chain);
+                if (current_len + strlen(next_cname.result) + 4 < sizeof(cname_chain)) {
+                    strncat(cname_chain, " > ", sizeof(cname_chain) - current_len - 1);
+                    strncat(cname_chain, next_cname.result, sizeof(cname_chain) - current_len - 4);
+                }
+                safe_strncpy(current_target, next_cname.result, sizeof(current_target));
+                chain_depth++;
+            } else {
+                break;
+            }
+        }
+
+        safe_strncpy(result->cname_record, cname_chain, sizeof(result->cname_record));
+
+        // Resolve final CNAME to IP
+        if (time(NULL) - wall_start < hard_timeout) {
+            dns_query_result_t cname_ip_result = {false, false, false, ""};
+            ares_gethostbyname(channel, current_target, AF_INET, dns_callback_a, &cname_ip_result);
+            wait_for_query(channel, &cname_ip_result, timeout);
+            if (cname_ip_result.has_result) {
+                safe_strncpy(result->cname_ip, cname_ip_result.result, sizeof(result->cname_ip));
+            }
+        }
     }
 
     if (time(NULL) - wall_start >= hard_timeout) {
@@ -321,13 +468,30 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
         safe_strncpy(result->ns_record, ns_result.result, sizeof(result->ns_record));
     }
 
+    // Query CAA record
+    if (time(NULL) - wall_start < hard_timeout) {
+        dns_query_result_t caa_result = {false, false, false, ""};
+        ares_query(channel, subdomain, ns_c_in, ns_t_caa, dns_callback_caa, &caa_result);
+        wait_for_query(channel, &caa_result, timeout);
+        result->has_caa = caa_result.has_result;
+    }
+
     bool has_resolution = has_a_record || cname_result.has_result || ns_result.has_result;
 
-    if (has_a_record && ctx->geoip_db && strcmp(result->a_record, "N/A") != 0) {
-        pthread_mutex_lock(&ctx->geoip_mutex);
-        geoip_lookup(ctx, result->a_record, result->country_code);
-        pthread_mutex_unlock(&ctx->geoip_mutex);
+    // GeoIP lookup - prefer A record, fallback to CNAME IP
+    const char *lookup_ip = NULL;
+    if (has_a_record && result->a_record[0] != '\0') {
+        lookup_ip = result->a_record;
+    } else if (result->cname_ip[0] != '\0') {
+        lookup_ip = result->cname_ip;
     }
+
+    if (lookup_ip) {
+        geoip_lookup(ctx, lookup_ip, result);
+    }
+
+    tld_lookup_country(result->tld, result->tld_iso, result->tld_country);
+    tld_database_lookup(ctx, result->tld, result->tld_type, result->tld_manager);
 
     if (has_a_record && (time(NULL) - wall_start < hard_timeout)) {
         dns_query_result_t mx_result = {false, false, false, ""};
