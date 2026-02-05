@@ -17,6 +17,13 @@ typedef struct {
     char result[MAX_DOMAIN_LEN];
 } dns_query_result_t;
 
+typedef struct {
+    dns_query_result_t base;
+    char cname[MAX_DOMAIN_LEN];
+    bool has_cname;
+    const char *query_name;
+} dns_a_query_result_t;
+
 static void dns_callback_a(void *arg, int status, int timeouts __attribute__((unused)), struct hostent *host) {
     dns_query_result_t *result = (dns_query_result_t *)arg;
 
@@ -43,18 +50,98 @@ static void dns_callback_a(void *arg, int status, int timeouts __attribute__((un
     result->completed = true;
 }
 
+static void dns_callback_a_with_cname(void *arg, int status, int timeouts __attribute__((unused)), struct hostent *host) {
+    dns_a_query_result_t *result = (dns_a_query_result_t *)arg;
+
+    if (status == ARES_ESERVFAIL) {
+        result->base.servfail = true;
+        result->base.completed = true;
+        return;
+    }
+
+    if (status == ARES_SUCCESS && host) {
+        // Check if h_name (canonical name) differs from query name - indicates CNAME
+        if (host->h_name && result->query_name && strcasecmp(host->h_name, result->query_name) != 0) {
+            safe_strncpy(result->cname, host->h_name, sizeof(result->cname));
+            result->has_cname = true;
+        }
+
+        if (host->h_addr_list[0]) {
+            char ip[MAX_IP_LEN];
+            if (host->h_addrtype == AF_INET) {
+                inet_ntop(AF_INET, host->h_addr_list[0], ip, sizeof(ip));
+            } else if (host->h_addrtype == AF_INET6) {
+                inet_ntop(AF_INET6, host->h_addr_list[0], ip, sizeof(ip));
+            } else {
+                result->base.completed = true;
+                return;
+            }
+            safe_strncpy(result->base.result, ip, sizeof(result->base.result));
+            result->base.has_result = true;
+        }
+    }
+
+    result->base.completed = true;
+}
+
 static void dns_callback_cname(void *arg, int status, int timeouts __attribute__((unused)), unsigned char *abuf, int alen) {
     dns_query_result_t *result = (dns_query_result_t *)arg;
 
-    if (status == ARES_SUCCESS && abuf) {
-        struct hostent *host;
-        if (ares_parse_a_reply(abuf, alen, &host, NULL, NULL) == ARES_SUCCESS) {
-            if (host && host->h_name) {
+    // Parse CNAME even if status indicates the target doesn't exist
+    // Status might be ARES_ENODATA or ARES_ENOTFOUND when CNAME target is dangling
+    if ((status == ARES_SUCCESS || status == ARES_ENODATA || status == ARES_ENOTFOUND) && abuf) {
+        struct hostent *host = NULL;
+        if (ares_parse_a_reply(abuf, alen, &host, NULL, NULL) == ARES_SUCCESS && host) {
+            if (host->h_name && host->h_name[0] != '\0') {
                 safe_strncpy(result->result, host->h_name, sizeof(result->result));
                 result->has_result = true;
             }
-            if (host) {
-                ares_free_hostent(host);
+            ares_free_hostent(host);
+            result->completed = true;
+            return;
+        }
+    }
+
+    // Manual parsing for CNAME-only responses
+    if ((status == ARES_SUCCESS || status == ARES_ENODATA || status == ARES_ENOTFOUND) && abuf && alen > 12) {
+        unsigned short ancount = (abuf[6] << 8) | abuf[7];
+
+        if (ancount > 0) {
+            const unsigned char *aptr = abuf + 12;
+            const unsigned char *end = abuf + alen;
+
+            // Skip question section
+            char *qname = NULL;
+            long len = 0;
+            if (ares_expand_name(aptr, abuf, alen, &qname, &len) == ARES_SUCCESS) {
+                if (qname) ares_free_string(qname);
+                aptr += len + 4;  // Skip QNAME + QTYPE + QCLASS
+
+                // Parse first answer
+                if (aptr < end) {
+                    char *aname = NULL;
+                    if (ares_expand_name(aptr, abuf, alen, &aname, &len) == ARES_SUCCESS) {
+                        if (aname) ares_free_string(aname);
+                        aptr += len;
+
+                        if (aptr + 10 <= end) {
+                            unsigned short atype = (aptr[0] << 8) | aptr[1];
+                            aptr += 8;  // Skip TYPE, CLASS, TTL
+                            unsigned short rdlen = (aptr[0] << 8) | aptr[1];
+                            aptr += 2;
+
+                            // CNAME type is 5
+                            if (atype == 5 && aptr + rdlen <= end) {
+                                char *cname = NULL;
+                                if (ares_expand_name(aptr, abuf, alen, &cname, &len) == ARES_SUCCESS && cname) {
+                                    safe_strncpy(result->result, cname, sizeof(result->result));
+                                    result->has_result = true;
+                                    ares_free_string(cname);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -285,6 +372,7 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
     safe_strncpy(result->mx_record, "", sizeof(result->mx_record));
     result->has_caa = false;
     result->has_txt = false;
+    result->dangling = false;
     safe_strncpy(result->tld_iso, "", sizeof(result->tld_iso));
     safe_strncpy(result->tld_country, "", sizeof(result->tld_country));
     safe_strncpy(result->tld_type, "", sizeof(result->tld_type));
@@ -302,17 +390,17 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
         return false;
     }
 
-    // Query A record
-    dns_query_result_t a_result = {false, false, false, ""};
-    ares_gethostbyname(channel, subdomain, AF_INET, dns_callback_a, &a_result);
-    wait_for_query(channel, &a_result, timeout);
+    // Query A record (with CNAME detection)
+    dns_a_query_result_t a_result = {{false, false, false, ""}, "", false, subdomain};
+    ares_gethostbyname(channel, subdomain, AF_INET, dns_callback_a_with_cname, &a_result);
+    wait_for_query(channel, &a_result.base, timeout);
 
     if (time(NULL) - wall_start >= hard_timeout) {
         ares_cancel(channel);
         return false;
     }
 
-    if (a_result.servfail) {
+    if (a_result.base.servfail) {
         __sync_add_and_fetch(&server->servfails, 1);
         if (server->servfails >= 3 && !server->disabled) {
             server->disabled = true;
@@ -324,9 +412,12 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
         return false;
     }
 
-    if (a_result.has_result) {
-        safe_strncpy(result->a_record, a_result.result, sizeof(result->a_record));
+    if (a_result.base.has_result) {
+        safe_strncpy(result->a_record, a_result.base.result, sizeof(result->a_record));
     }
+
+    // If CNAME was detected from A query, use it
+    bool has_cname_from_a_query = a_result.has_cname;
 
     // Query AAAA record (separately, not fallback)
     if (time(NULL) - wall_start < hard_timeout) {
@@ -336,7 +427,7 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
 
         if (time(NULL) - wall_start >= hard_timeout) {
             ares_cancel(channel);
-            return a_result.has_result;
+            return a_result.base.has_result;
         }
 
         if (aaaa_result.servfail) {
@@ -348,7 +439,7 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
                     sd_warn("DNS server %s disabled due to ServFail errors (will retry in 10s)", server->server);
                 }
             }
-            return a_result.has_result;
+            return a_result.base.has_result;
         }
 
         if (aaaa_result.has_result) {
@@ -356,7 +447,7 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
         }
     }
 
-    bool has_a_record = a_result.has_result;
+    bool has_a_record = a_result.base.has_result;
 
     // Reverse DNS lookup for A record
     if (has_a_record && result->a_record[0] != '\0' && (time(NULL) - wall_start < hard_timeout)) {
@@ -410,8 +501,16 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
 
     // Follow CNAME chain
     dns_query_result_t cname_result = {false, false, false, ""};
-    ares_query(channel, subdomain, ns_c_in, ns_t_cname, dns_callback_cname, &cname_result);
-    wait_for_query(channel, &cname_result, timeout);
+
+    // Use CNAME from A query if available, otherwise query specifically
+    if (has_cname_from_a_query) {
+        safe_strncpy(cname_result.result, a_result.cname, sizeof(cname_result.result));
+        cname_result.has_result = true;
+        cname_result.completed = true;
+    } else {
+        ares_query(channel, subdomain, ns_c_in, ns_t_cname, dns_callback_cname, &cname_result);
+        wait_for_query(channel, &cname_result, timeout);
+    }
 
     if (cname_result.has_result) {
         char cname_chain[MAX_DOMAIN_LEN * 3] = {0};
@@ -446,13 +545,20 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
         safe_strncpy(result->cname_record, cname_chain, sizeof(result->cname_record));
 
         // Resolve final CNAME to IP
+        bool cname_target_resolves = false;
         if (time(NULL) - wall_start < hard_timeout) {
             dns_query_result_t cname_ip_result = {false, false, false, ""};
             ares_gethostbyname(channel, current_target, AF_INET, dns_callback_a, &cname_ip_result);
             wait_for_query(channel, &cname_ip_result, timeout);
             if (cname_ip_result.has_result) {
                 safe_strncpy(result->cname_ip, cname_ip_result.result, sizeof(result->cname_ip));
+                cname_target_resolves = true;
             }
+        }
+
+        // Check for dangling CNAME (CNAME points to non-existent domain)
+        if (!cname_target_resolves) {
+            result->dangling = true;
         }
     }
 
@@ -466,6 +572,18 @@ bool dns_resolve_full(subdigger_ctx_t *ctx, const char *subdomain, subdomain_res
     wait_for_query(channel, &ns_result, timeout);
     if (ns_result.has_result) {
         safe_strncpy(result->ns_record, ns_result.result, sizeof(result->ns_record));
+
+        // Check if NS server resolves (for dangling NS detection)
+        if (time(NULL) - wall_start < hard_timeout) {
+            dns_query_result_t ns_ip_result = {false, false, false, ""};
+            ares_gethostbyname(channel, ns_result.result, AF_INET, dns_callback_a, &ns_ip_result);
+            wait_for_query(channel, &ns_ip_result, timeout);
+
+            // If NS record exists but NS server doesn't resolve, it's dangling
+            if (!ns_ip_result.has_result) {
+                result->dangling = true;
+            }
+        }
     }
 
     // Query CAA record

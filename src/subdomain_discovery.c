@@ -3,13 +3,38 @@
 #include <string.h>
 #include "../include/subdigger.h"
 
+static const char *normalize_method_name(const char *method) {
+    if (!method) {
+        return NULL;
+    }
+
+    // Support plural aliases
+    if (strcmp(method, "wordlists") == 0) {
+        return "wordlist";
+    }
+    if (strcmp(method, "certs") == 0 || strcmp(method, "certificate") == 0 || strcmp(method, "certificates") == 0) {
+        return "cert";
+    }
+    if (strcmp(method, "apis") == 0) {
+        return "api";
+    }
+
+    return method;
+}
+
 static bool method_enabled(config_t *config, const char *method) {
     if (!config || !config->methods || !method) {
         return false;
     }
 
+    const char *normalized = normalize_method_name(method);
+    if (!normalized) {
+        return false;
+    }
+
     for (int i = 0; i < config->method_count; i++) {
-        if (strcmp(config->methods[i], method) == 0) {
+        const char *config_method = normalize_method_name(config->methods[i]);
+        if (config_method && strcmp(config_method, normalized) == 0) {
             return true;
         }
     }
@@ -96,10 +121,20 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
             wordlist_load_and_queue_auto(ctx, domain, &total_candidates);
         } else if (config->wordlist_path) {
             sd_info("Loading wordlist");
-            char source[64];
+
+            // Extract filename and strip .txt extension for cleaner source display
             const char *filename = strrchr(config->wordlist_path, '/');
             filename = filename ? filename + 1 : config->wordlist_path;
-            snprintf(source, sizeof(source), "wordlist:%s", filename);
+
+            char clean_name[64];
+            safe_strncpy(clean_name, filename, sizeof(clean_name));
+            size_t len = strlen(clean_name);
+            if (len > 4 && strcmp(clean_name + len - 4, ".txt") == 0) {
+                clean_name[len - 4] = '\0';
+            }
+
+            char source[64];
+            snprintf(source, sizeof(source), "wordlist:%s", clean_name);
 
             size_t wordlist_count = 0;
             char **wordlist = wordlist_load(config->wordlist_path, &wordlist_count);
@@ -245,6 +280,10 @@ int discover_subdomains(subdigger_ctx_t *ctx) {
     stop_progress_monitor(ctx);
 
     sd_info("DNS resolution completed, found %zu subdomains", ctx->result_buffer->count);
+
+    // Shutdown task queue and destroy thread pool before cleanup
+    task_queue_shutdown(ctx->task_queue);
+    thread_pool_destroy(ctx);
 
     deduplicate_results(ctx->result_buffer);
     sd_info("After deduplication: %zu unique subdomains", ctx->result_buffer->count);

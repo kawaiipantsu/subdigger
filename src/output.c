@@ -48,7 +48,7 @@ void output_csv_header(FILE *fp) {
         return;
     }
 
-    fprintf(fp, "Date,Domain,Subdomain,A,AAAA,ReverseDNS,CNAME,CNAME-IP,NS,MX,CAA,TXT,TLD,TLD-ISO,TLD-Country,TLD-Type,TLD-Manager,IP-ISO,IP-Country,IP-City,ASN-Org,Source\n");
+    fprintf(fp, "Date,Domain,Subdomain,A,AAAA,ReverseDNS,CNAME,CNAME-IP,NS,MX,CAA,TXT,Dangling,TLD,TLD-ISO,TLD-Country,TLD-Type,TLD-Manager,IP-ISO,IP-Country,IP-City,ASN-Org,Source\n");
 }
 
 void output_csv_record(FILE *fp, const subdomain_result_t *result) {
@@ -102,7 +102,7 @@ void output_csv_record(FILE *fp, const subdomain_result_t *result) {
     escape_csv_field(result->asn_org, escaped_asn_org, sizeof(escaped_asn_org));
     escape_csv_field(result->source, escaped_source, sizeof(escaped_source));
 
-    fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+    fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
             escaped_timestamp,
             escaped_domain,
             escaped_subdomain,
@@ -115,6 +115,7 @@ void output_csv_record(FILE *fp, const subdomain_result_t *result) {
             escaped_mx,
             result->has_caa ? "true" : "false",
             result->has_txt ? "true" : "false",
+            result->dangling ? "true" : "false",
             escaped_tld,
             escaped_tld_iso,
             escaped_tld_country,
@@ -199,6 +200,7 @@ void output_json_record(FILE *fp, const subdomain_result_t *result, bool is_last
     fprintf(fp, "      \"mx_record\": \"%s\",\n", sanitized_mx);
     fprintf(fp, "      \"caa\": %s,\n", result->has_caa ? "true" : "false");
     fprintf(fp, "      \"txt\": %s,\n", result->has_txt ? "true" : "false");
+    fprintf(fp, "      \"dangling\": %s,\n", result->dangling ? "true" : "false");
     fprintf(fp, "      \"tld\": \"%s\",\n", sanitized_tld);
     fprintf(fp, "      \"tld_iso\": \"%s\",\n", sanitized_tld_iso);
     fprintf(fp, "      \"tld_country\": \"%s\",\n", sanitized_tld_country);

@@ -40,6 +40,7 @@ typedef struct {
     char mx_record[MAX_DOMAIN_LEN];
     bool has_caa;
     bool has_txt;
+    bool dangling;
     char tld[64];
     char tld_iso[4];
     char tld_country[64];

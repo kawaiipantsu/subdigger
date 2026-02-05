@@ -5,14 +5,20 @@ High-performance, multi-threaded subdomain discovery tool for Debian Linux.
 ## Features
 
 - **Multiple Discovery Methods**: Certificate Transparency, Wordlists, OSINT APIs, Bruteforce, DNS Zone Transfer
-- **Comprehensive DNS Enrichment**: A, CNAME, NS, MX, TXT records
-- **GeoIP Integration**: Resolve IPs to country ISO codes using MaxMind GeoLite2
-- **Flexible Output**: CSV and JSON formats
-- **High Performance**: Multi-threaded architecture with c-ares async DNS
-- **Smart Caching**: 24-hour file-based cache to avoid redundant scans
+- **Comprehensive DNS Enrichment**: A, AAAA, CNAME (with chain following), NS, MX, TXT, CAA, PTR records
+- **Dangling DNS Detection**: Identifies subdomain takeover vulnerabilities (CNAME/NS pointing to non-existent domains)
+- **GeoIP Integration**: Country, city, and ASN resolution using MaxMind GeoLite2
+- **TLD Intelligence**: IANA TLD database with country and manager information
+- **Flexible Output**: CSV and JSON formats with real-time streaming
+- **High Performance**: Multi-threaded architecture (140 threads default across 7 DNS servers)
+- **Smart Caching**: File-based cache with automatic deduplication
+- **Recursive Discovery**: Automatically discovers subdomains from CNAME, NS, and ReverseDNS records
+- **Health Monitoring**: Per-DNS server statistics with automatic failover
 - **Secure**: Input validation, sanitization, and safe coding practices
 
 ## Installation
+
+> **💡 Performance Tip:** For optimal speed (10x faster), set up your own DNS resolver before using SubDigger. See [UNBOUND.md](UNBOUND.md) for a quick 5-minute setup guide.
 
 ### From Source
 
@@ -29,7 +35,7 @@ sudo make install
 
 # Build Debian package
 make deb
-sudo dpkg -i ../subdigger_1.0.0-1_amd64.deb
+sudo dpkg -i ../subdigger_1.3.0-1_amd64.deb
 ```
 
 ### Post-Installation
@@ -53,17 +59,23 @@ subdigger -d example.com
 ### Advanced Usage
 
 ```bash
-# JSON output
+# JSON output with real-time streaming
 subdigger -d example.com -f json -o results.json
 
-# Specific methods with custom threads
-subdigger -d example.com -m wordlist,cert -t 100
+# Enable bruteforce method with depth 4
+subdigger -d example.com -m wordlist,cert,bruteforce --bruteforce-depth 4
 
-# Custom wordlist
-subdigger -d example.com -w /usr/share/wordlists/dns.txt
+# Custom wordlist (disables auto-discovery)
+subdigger -d example.com -w /path/to/custom-wordlist.txt
 
-# Disable caching
+# Quiet mode for piping to other tools
+subdigger -d example.com -q | grep -i admin
+
+# Disable caching for fresh results
 subdigger -d example.com --no-cache
+
+# High-performance scan with all methods
+subdigger -d example.com -m wordlist,cert,bruteforce,dns,api -t 280
 ```
 
 ## Configuration
@@ -72,16 +84,17 @@ Configuration file: `~/.subdigger/config`
 
 ```ini
 [general]
-threads = 50
-timeout = 5
+# threads = 140  # Auto: 20 per DNS server (default)
+timeout = 2
 
 [dns]
-servers = 8.8.8.8,1.1.1.1
+servers = 8.8.8.8,8.8.4.4,1.1.1.1,1.0.0.1,208.67.222.222,208.67.220.220,9.9.9.9
 
 [discovery]
-methods = wordlist,cert,bruteforce
+methods = wordlist,cert
 wordlist_path = ~/.subdigger/wordlists/common-subdomains.txt
-bruteforce_depth = 2
+auto_wordlists = true
+bruteforce_depth = 3
 
 [output]
 format = csv
@@ -90,25 +103,26 @@ format = csv
 enabled = true
 
 [apis]
-shodan_key = YOUR_SHODAN_API_KEY
-virustotal_key = YOUR_VIRUSTOTAL_API_KEY
+shodan_key =
+virustotal_key =
 ```
 
 ## Discovery Methods
 
-- **wordlist**: Enumerate subdomains using a wordlist file
+- **wordlist**: Enumerate subdomains using wordlist files (14 included, auto-discovery enabled)
 - **cert**: Query certificate transparency logs via crt.sh
-- **bruteforce**: Generate and test subdomain permutations (a-z, 0-9)
+- **bruteforce**: Generate and test subdomain permutations (a-z, 0-9, underscore, depth 1-5)
 - **dns**: Attempt DNS zone transfer (AXFR)
-- **api**: Query OSINT APIs (Shodan, VirusTotal) if API keys provided
+- **api**: Query OSINT APIs (Shodan, VirusTotal) - requires API keys in config file
+- **recursive**: Automatically discovers subdomains from CNAME, NS, and ReverseDNS targets
 
 ## Output Formats
 
 ### CSV (Default)
 
 ```csv
-Date,Subdomain,A/CNAME,NS,MX,TXT_Present,TLD,Country,Source
-2026-02-04T14:23:45Z,www.example.com,93.184.216.34,N/A,N/A,No,com,US,discovery
+Date,Domain,Subdomain,A,AAAA,ReverseDNS,CNAME,CNAME-IP,NS,MX,CAA,TXT,Dangling,TLD,TLD-ISO,TLD-Country,TLD-Type,TLD-Manager,IP-ISO,IP-Country,IP-City,ASN-Org,Source
+2026-02-05T14:23:45Z,example.com,www.example.com,93.184.216.34,,,,,ns1.example.com,,,false,false,com,US,United States,generic,IANA,US,United States,Los Angeles,Example AS,wordlist:common
 ```
 
 ### JSON
@@ -117,16 +131,29 @@ Date,Subdomain,A/CNAME,NS,MX,TXT_Present,TLD,Country,Source
 {
   "subdomains": [
     {
-      "timestamp": "2026-02-04T14:23:45Z",
+      "timestamp": "2026-02-05T14:23:45Z",
+      "domain": "example.com",
       "subdomain": "www.example.com",
       "a_record": "93.184.216.34",
-      "cname_record": "N/A",
-      "ns_record": "N/A",
-      "mx_record": "N/A",
-      "has_txt": false,
+      "aaaa_record": "",
+      "reverse_dns": "",
+      "cname_record": "",
+      "cname_ip": "",
+      "ns_record": "ns1.example.com",
+      "mx_record": "",
+      "caa": false,
+      "txt": false,
+      "dangling": false,
       "tld": "com",
-      "country_code": "US",
-      "source": "discovery"
+      "tld_iso": "US",
+      "tld_country": "United States",
+      "tld_type": "generic",
+      "tld_manager": "IANA",
+      "ip_iso": "US",
+      "ip_country": "United States",
+      "ip_city": "Los Angeles",
+      "asn_org": "Example AS",
+      "source": "wordlist:common"
     }
   ]
 }
@@ -134,12 +161,41 @@ Date,Subdomain,A/CNAME,NS,MX,TXT_Present,TLD,Country,Source
 
 ## Performance
 
-Target: **1000+ DNS queries per second** with 50 threads
+- **140 default threads** (20 per DNS server across 7 servers)
+- **Up to 1400 threads** maximum (200 per DNS server)
+- **Real-time streaming output** - no waiting for scan completion
+- Asynchronous DNS resolution with c-ares (per-thread DNS channels)
+- Thread-safe task queue and result buffer with mutex protection
+- Automatic deduplication and result caching
+- Per-DNS server health monitoring and automatic failover
+- 3-second timeout protection with thread respawning
 
-- Asynchronous DNS resolution with c-ares
-- Thread-safe task queue and result buffer
-- Automatic deduplication
-- Configurable worker pool (up to 200 threads)
+### ⚡ Optimal Performance: Run Your Own DNS Resolver
+
+**For 10x faster performance**, run your own local DNS resolver instead of using public DNS servers.
+
+**Performance Comparison:**
+- Public DNS (8.8.8.8): ~130 queries/second (rate limited)
+- Local Unbound: ~1200+ queries/second (no limits)
+
+**Why it's faster:**
+- Zero network latency (localhost)
+- No rate limiting from public DNS providers
+- Direct queries to authoritative nameservers
+- Maximum thread utilization
+
+**Setup Guide:** See [UNBOUND.md](UNBOUND.md) for a complete installation and configuration guide for running your own Unbound DNS resolver.
+
+**Quick setup:**
+```bash
+# Install Unbound
+sudo apt-get install unbound
+
+# Configure SubDigger to use it
+echo "servers = 127.0.0.1" >> ~/.subdigger/config
+```
+
+With local DNS, a 350k subdomain scan takes **5-8 minutes** instead of 45-60 minutes!
 
 ## Security
 

@@ -167,7 +167,7 @@ bool result_buffer_add(result_buffer_t *buffer, const subdomain_result_t *result
         if (strcmp(buffer->results[i].subdomain, result->subdomain) == 0 &&
             strcmp(buffer->results[i].domain, result->domain) == 0) {
             pthread_mutex_unlock(&buffer->mutex);
-            return true; // Already exists, return success without adding
+            return false; // Already exists, return false to indicate duplicate
         }
     }
 
@@ -349,15 +349,39 @@ static void extract_discovered_subdomains(subdigger_ctx_t *ctx, const subdomain_
             // Check if it's exactly the target domain
             if (strcmp(ns_copy, target_domain) == 0) {
                 // Skip - this is the root domain itself
-                return;
-            }
-
-            // Check if it ends with .target_domain
-            if (len > target_len + 1) {
+            } else if (len > target_len + 1) {
+                // Check if it ends with .target_domain
                 const char *suffix = ns_copy + (len - target_len);
                 const char *dot = ns_copy + (len - target_len - 1);
                 if (*dot == '.' && strcmp(suffix, target_domain) == 0) {
                     discovered_buffer_add(ctx->discovered_buffer, ns_copy);
+                }
+            }
+        }
+    }
+
+    // Extract subdomain from ReverseDNS record
+    if (strlen(result->reverse_dns) > 0) {
+        char rdns_copy[MAX_DOMAIN_LEN];
+        safe_strncpy(rdns_copy, result->reverse_dns, sizeof(rdns_copy));
+
+        size_t len = strlen(rdns_copy);
+        // Remove trailing dot if present
+        if (len > 0 && rdns_copy[len-1] == '.') {
+            rdns_copy[len-1] = '\0';
+            len--;
+        }
+
+        if (len > 0 && len >= target_len) {
+            // Check if it's exactly the target domain
+            if (strcmp(rdns_copy, target_domain) == 0) {
+                // Skip - this is the root domain itself
+            } else if (len > target_len + 1) {
+                // Check if it ends with .target_domain
+                const char *suffix = rdns_copy + (len - target_len);
+                const char *dot = rdns_copy + (len - target_len - 1);
+                if (*dot == '.' && strcmp(suffix, target_domain) == 0) {
+                    discovered_buffer_add(ctx->discovered_buffer, rdns_copy);
                 }
             }
         }
@@ -420,28 +444,35 @@ static void *worker_thread(void *arg) {
         bool include_non_resolving = (strstr(item.source, "crtsh") != NULL ||
                                      strstr(item.source, "shodan") != NULL ||
                                      strstr(item.source, "virustotal") != NULL ||
-                                     strstr(item.source, "dns-axfr") != NULL);
+                                     strstr(item.source, "dns-axfr") != NULL ||
+                                     strstr(item.source, "recursive-dns") != NULL ||
+                                     strstr(item.source, "rdns") != NULL);
 
         if (resolved || include_non_resolving) {
             safe_strncpy(result.source, item.source, sizeof(result.source));
-            result_buffer_add(ctx->result_buffer, &result);
-            __sync_add_and_fetch(&ctx->results_found, 1);
 
-            // Extract new subdomains from CNAME and NS records
+            // Always extract discovered subdomains from CNAME/NS/ReverseDNS (even for duplicates)
             if (resolved) {
                 extract_discovered_subdomains(ctx, &result);
             }
 
-            if (ctx->output_fp) {
-                pthread_mutex_lock(&ctx->output_mutex);
-                if (strcmp(ctx->config->output_format, "json") == 0) {
-                    output_json_record(ctx->output_fp, &result, true);
-                    fprintf(ctx->output_fp, "\n");
-                } else {
-                    output_csv_record(ctx->output_fp, &result);
+            // Only output and increment counter if this is a NEW result (not a duplicate)
+            bool is_new = result_buffer_add(ctx->result_buffer, &result);
+
+            if (is_new) {
+                __sync_add_and_fetch(&ctx->results_found, 1);
+
+                if (ctx->output_fp) {
+                    pthread_mutex_lock(&ctx->output_mutex);
+                    if (strcmp(ctx->config->output_format, "json") == 0) {
+                        output_json_record(ctx->output_fp, &result, true);
+                        fprintf(ctx->output_fp, "\n");
+                    } else {
+                        output_csv_record(ctx->output_fp, &result);
+                    }
+                    fflush(ctx->output_fp);
+                    pthread_mutex_unlock(&ctx->output_mutex);
                 }
-                fflush(ctx->output_fp);
-                pthread_mutex_unlock(&ctx->output_mutex);
             }
         }
 
@@ -522,25 +553,15 @@ void thread_pool_destroy(subdigger_ctx_t *ctx) {
 
     task_queue_shutdown(ctx->task_queue);
 
-    time_t join_start = time(NULL);
-    int timeout_per_thread = 3;
+    int timeout_per_thread = 3;  // 3 seconds per thread
     int completed = 0;
     int abandoned = 0;
     int respawned = 0;
 
     for (int i = 0; i < ctx->config->threads; i++) {
-        time_t now = time(NULL);
-        int remaining = timeout_per_thread - (now - join_start);
-
-        if (remaining <= 0) {
-            pthread_detach(ctx->threads[i]);
-            abandoned++;
-            continue;
-        }
-
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += remaining;
+        ts.tv_sec += timeout_per_thread;  // Give each thread 3 seconds
 
         int ret = pthread_timedjoin_np(ctx->threads[i], NULL, &ts);
         if (ret == ETIMEDOUT) {
@@ -593,21 +614,12 @@ void thread_pool_destroy(subdigger_ctx_t *ctx) {
 
                 respawned = thread_idx;
 
-                join_start = time(NULL);
                 size_t respawn_completed = 0;
 
                 for (size_t i = 0; i < (size_t)respawned; i++) {
-                    time_t now = time(NULL);
-                    int remaining_time = timeout_per_thread - (now - join_start);
-
-                    if (remaining_time <= 0) {
-                        pthread_detach(respawn_threads[i]);
-                        continue;
-                    }
-
                     struct timespec ts;
                     clock_gettime(CLOCK_REALTIME, &ts);
-                    ts.tv_sec += remaining_time;
+                    ts.tv_sec += timeout_per_thread;  // Give each respawned thread 3 seconds
 
                     int ret = pthread_timedjoin_np(respawn_threads[i], NULL, &ts);
                     if (ret == 0) {

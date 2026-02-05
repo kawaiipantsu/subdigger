@@ -28,6 +28,7 @@ static void print_help(const char *program_name) {
     printf("  -f, --format <csv|json>   Output format (default: csv)\n");
     printf("  -m, --methods <list>      Comma-separated discovery methods\n");
     printf("                            Available: wordlist,cert,bruteforce,dns,api\n");
+    printf("                            (Plural forms like 'wordlists', 'certs' are also accepted)\n");
     printf("  -q, --quiet               Quiet mode: only output data (no logs)\n");
     printf("  --no-progress             Disable progress reporting\n");
     printf("  --no-auto-wordlists       Disable automatic wordlist discovery (default: enabled)\n");
@@ -37,13 +38,6 @@ static void print_help(const char *program_name) {
     printf("  --get-root-db             Fetch and update IANA TLD database\n");
     printf("  -h, --help                Show this help message\n");
     printf("  -v, --version             Show version information\n\n");
-    printf("Examples:\n");
-    printf("  %s -d example.com\n", program_name);
-    printf("  %s -d example.com -f json -o results.json\n", program_name);
-    printf("  %s -d example.com -m bruteforce --bruteforce-depth 4\n", program_name);
-    printf("  %s -d example.com -m wordlist,cert,bruteforce\n", program_name);
-    printf("  %s -d example.com -q | grep -i admin\n", program_name);
-    printf("  %s -d example.com -w custom.txt\n\n", program_name);
     printf("Configuration:\n");
     printf("  Config file: ~/.subdigger/config\n");
     printf("  Wordlists:   ~/.subdigger/wordlists/\n");
@@ -67,6 +61,25 @@ static void setup_signal_handlers(void) {
 
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
+}
+
+static bool is_valid_method(const char *method) {
+    const char *valid_methods[] = {
+        "wordlist", "wordlists",
+        "cert", "certs", "certificate", "certificates",
+        "bruteforce",
+        "dns",
+        "api", "apis",
+        NULL
+    };
+
+    for (int i = 0; valid_methods[i] != NULL; i++) {
+        if (strcmp(method, valid_methods[i]) == 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 static void ensure_directories(void) {
@@ -190,14 +203,22 @@ int main(int argc, char *argv[]) {
 
                 char *methods_copy = strdup(optarg);
                 char *token = strtok(methods_copy, ",");
+                bool has_invalid = false;
                 while (token) {
                     token = trim(token);
+                    if (!is_valid_method(token)) {
+                        sd_warn("Invalid method '%s' - valid methods: wordlist,cert,bruteforce,dns,api", token);
+                        has_invalid = true;
+                    }
                     config.methods = realloc(config.methods, (config.method_count + 1) * sizeof(char *));
                     config.methods[config.method_count] = strdup(token);
                     config.method_count++;
                     token = strtok(NULL, ",");
                 }
                 free(methods_copy);
+                if (has_invalid) {
+                    sd_info("Note: 'wordlists', 'certs', 'apis' are accepted as aliases");
+                }
                 break;
             case 'q':
                 config.quiet_mode = true;
@@ -303,7 +324,7 @@ int main(int argc, char *argv[]) {
         ctx.output_header_written = true;
     }
 
-    ctx.task_queue = task_queue_init(10000);
+    ctx.task_queue = task_queue_init(500000);
     if (!ctx.task_queue) {
         sd_error("Failed to initialize task queue");
         if (ctx.output_fp && ctx.output_fp != stdout) fclose(ctx.output_fp);

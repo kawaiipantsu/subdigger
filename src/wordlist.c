@@ -266,6 +266,10 @@ void wordlist_load_and_queue_auto(subdigger_ctx_t *ctx, const char *domain, size
     size_t total_files_loaded = 0;
     size_t total_words_queued = 0;
 
+    // First pass: discover all wordlist files
+    char **all_files = NULL;
+    size_t all_files_count = 0;
+
     for (int i = 0; search_dirs[i] != NULL; i++) {
         DIR *dir = opendir(search_dirs[i]);
         if (!dir) {
@@ -275,7 +279,6 @@ void wordlist_load_and_queue_auto(subdigger_ctx_t *ctx, const char *domain, size
             continue;
         }
 
-        size_t dir_file_count = 0;
         struct dirent *entry;
         while ((entry = readdir(dir)) != NULL) {
             if (entry->d_type != DT_REG && entry->d_type != DT_UNKNOWN) {
@@ -294,43 +297,86 @@ void wordlist_load_and_queue_auto(subdigger_ctx_t *ctx, const char *domain, size
                 continue;
             }
 
-            sd_info("Loading wordlist: %s (%s)", entry->d_name, search_dirs[i]);
-
-            size_t list_count = 0;
-            char **wordlist = wordlist_load(full_path, &list_count);
-
-            if (wordlist) {
-                char source[64];
-                snprintf(source, sizeof(source), "wordlist:%s", entry->d_name);
-
-                size_t queued_from_this_file = 0;
-                for (size_t j = 0; j < list_count && !shutdown_requested; j++) {
-                    char subdomain[MAX_DOMAIN_LEN];
-                    snprintf(subdomain, sizeof(subdomain), "%s.%s", wordlist[j], domain);
-                    if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, subdomain, source)) {
-                        (*total_candidates)++;
-                        queued_from_this_file++;
-                    }
-                }
-
-                total_words_queued += queued_from_this_file;
-                wordlist_free(wordlist, list_count);
-                dir_file_count++;
-                total_files_loaded++;
+            all_files = realloc(all_files, (all_files_count + 1) * sizeof(char *));
+            if (!all_files) {
+                closedir(dir);
+                return;
             }
-        }
-
-        if (dir_file_count > 0) {
-            sd_info("Loaded %zu wordlist file(s) from %s", dir_file_count, search_dirs[i]);
+            all_files[all_files_count] = strdup(full_path);
+            all_files_count++;
         }
 
         closedir(dir);
     }
 
+    if (all_files_count == 0) {
+        sd_warn("No wordlist files found in any search directory");
+        return;
+    }
+
+    sd_info("Discovered %zu wordlist file(s), loading...", all_files_count);
+
+    // Second pass: load and queue all discovered files
+    for (size_t f = 0; f < all_files_count && !shutdown_requested; f++) {
+        const char *full_path = all_files[f];
+        const char *filename = strrchr(full_path, '/');
+        filename = filename ? filename + 1 : full_path;
+
+        sd_info("Loading wordlist %zu/%zu: %s", f + 1, all_files_count, filename);
+
+        size_t list_count = 0;
+        char **wordlist = wordlist_load(full_path, &list_count);
+
+        if (wordlist) {
+            // Strip .txt extension from filename for cleaner source display
+            char clean_name[64];
+            safe_strncpy(clean_name, filename, sizeof(clean_name));
+            size_t len = strlen(clean_name);
+            if (len > 4 && strcmp(clean_name + len - 4, ".txt") == 0) {
+                clean_name[len - 4] = '\0';
+            }
+
+            char source[64];
+            snprintf(source, sizeof(source), "wordlist:%s", clean_name);
+
+            size_t queued_from_this_file = 0;
+            size_t last_progress_report = 0;
+            for (size_t j = 0; j < list_count && !shutdown_requested; j++) {
+                char subdomain[MAX_DOMAIN_LEN];
+                snprintf(subdomain, sizeof(subdomain), "%s.%s", wordlist[j], domain);
+                if (task_queue_push_unique(ctx->task_queue, ctx->discovered_buffer, subdomain, source)) {
+                    (*total_candidates)++;
+                    queued_from_this_file++;
+                }
+
+                // Show progress for large wordlists (every 50k items)
+                if (list_count > 50000 && (j - last_progress_report) >= 50000) {
+                    sd_info("  Queuing progress: %zu/%zu (%.0f%%)", j, list_count, (j * 100.0) / list_count);
+                    last_progress_report = j;
+                }
+            }
+
+            if (list_count > 50000) {
+                sd_info("  Completed queuing %zu candidates from %s", queued_from_this_file, filename);
+            }
+
+            total_words_queued += queued_from_this_file;
+            wordlist_free(wordlist, list_count);
+            total_files_loaded++;
+        }
+    }
+
+    // Cleanup
+    for (size_t i = 0; i < all_files_count; i++) {
+        free(all_files[i]);
+    }
+    free(all_files);
+
     if (total_files_loaded > 0) {
         sd_info("Auto-discovery complete: %zu wordlist file(s) loaded, %zu unique candidates queued",
                 total_files_loaded, total_words_queued);
     } else {
-        sd_warn("No wordlist files found in any search directory");
+        sd_warn("No wordlist files could be loaded");
     }
 }
+
