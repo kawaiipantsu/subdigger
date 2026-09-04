@@ -1,86 +1,92 @@
-# SubDigger
+<p align="center">
+  <img src="assets/banner.png" alt="SubDigger" width="720">
+</p>
 
-High-performance, multi-threaded subdomain discovery tool for Debian Linux.
+<h1 align="center">SubDigger</h1>
 
-## Features
+<p align="center">
+  <em>High-performance, multi-threaded subdomain discovery for recon, OSINT and security testing.</em>
+</p>
 
-- **Multiple Discovery Methods**: Certificate Transparency, Wordlists, OSINT APIs, Bruteforce, DNS Zone Transfer
-- **Comprehensive DNS Enrichment**: A, AAAA, CNAME (with chain following), NS, MX, TXT, CAA, PTR records
-- **Dangling DNS Detection**: Identifies subdomain takeover vulnerabilities (CNAME/NS pointing to non-existent domains)
-- **GeoIP Integration**: Country, city, and ASN resolution using MaxMind GeoLite2
-- **TLD Intelligence**: IANA TLD database with country and manager information
-- **Flexible Output**: CSV and JSON formats with real-time streaming
-- **High Performance**: Multi-threaded architecture (140 threads default across 7 DNS servers)
-- **Smart Caching**: File-based cache with automatic deduplication
-- **Recursive Discovery**: Automatically discovers subdomains from CNAME, NS, and ReverseDNS records
-- **Health Monitoring**: Per-DNS server statistics with automatic failover
-- **Secure**: Input validation, sanitization, and safe coding practices
+<p align="center">
+  <img alt="C" src="https://img.shields.io/badge/language-C-777bb4">
+  <img alt="Debian" src="https://img.shields.io/badge/platform-Debian%20Linux-a81d33">
+  <img alt="threads" src="https://img.shields.io/badge/threads-up%20to%201400-0e1013">
+  <img alt="sources" src="https://img.shields.io/badge/OSINT%20sources-19-35c98b">
+  <img alt="license MIT" src="https://img.shields.io/badge/license-MIT-e2223b">
+</p>
 
-## Installation
+---
 
-> **💡 Performance Tip:** For optimal speed (10x faster), set up your own DNS resolver before using SubDigger. See [UNBOUND.md](UNBOUND.md) for a quick 5-minute setup guide.
+Point it at a domain and it works every angle at once: certificate transparency
+logs, wordlists, OSINT APIs, bruteforce permutation, DNS zone transfers, and
+recursive discovery off of every CNAME, NS and PTR record it finds along the
+way. Every hit gets enriched — A/AAAA/CNAME chains, NS, MX, TXT, CAA, PTR,
+GeoIP, ASN, TLD intelligence — and flagged for subdomain takeover risk, all
+streamed to CSV or JSON in real time across up to 1400 threads.
 
-### From Source
+## What's in the box
+
+| | |
+|---|---|
+| **Discovery** | Certificate Transparency (crt.sh) · Wordlists (14 bundled) · Bruteforce (depth 1–5) · DNS Zone Transfer (AXFR) · Recursive (CNAME/NS/PTR follow-up) · Wildcard DNS detection |
+| **OSINT APIs** | 19 sources — BeVigil, BinaryEdge, BufferOver (free, no key), C99, Censys, CertSpotter, Chaos, FullHunt, GitHub, Hunter, IntelX, LeakIX, Netlas, PassiveTotal, SecurityTrails, Shodan, VirusTotal, WhoisXMLAPI, ZoomEye |
+| **Enrichment** | A, AAAA, CNAME (chain following), NS, MX, TXT, CAA, PTR · dangling DNS / takeover detection · IANA TLD data · MaxMind GeoLite2 country, city, ASN |
+| **Performance** | 140 threads by default (20 per DNS server), up to 1400 · async DNS via c-ares · per-server health monitoring with automatic failover · real-time streaming output |
+| **Output** | CSV or JSON, streamed as results arrive · file-based cache with automatic deduplication |
+| **Security** | RFC 1035 domain validation · input sanitization · path traversal prevention · config file permission checks · stack protection |
+
+## Install
+
+> **💡 Performance tip:** set up your own DNS resolver for ~10x faster scans — see [UNBOUND.md](UNBOUND.md) for a 5-minute setup.
 
 ```bash
-# Install dependencies
+# Dependencies
 apt-get install -y build-essential libc-ares-dev libcurl4-openssl-dev \
                    libjson-c-dev libmaxminddb-dev ruby-ronn
 
-# Build
+# Build & install
 make
-
-# Install
 sudo make install
 
-# Build Debian package
+# ...or build a Debian package
 make deb
-sudo dpkg -i ../subdigger_1.4.0-1_amd64.deb
+sudo dpkg -i ../subdigger_1.4.1-1_amd64.deb
 ```
 
-### Post-Installation
-
-Install GeoIP database for country resolution:
+Then install a GeoIP database for country/city/ASN resolution:
 
 ```bash
 apt-get install geoipupdate
-# Configure /etc/GeoIP.conf with your MaxMind account
+# configure /etc/GeoIP.conf with your MaxMind account
 geoipupdate
 ```
 
 ## Usage
 
-### Basic Usage
-
 ```bash
+# Basic scan
 subdigger -d example.com
-```
 
-### Advanced Usage
-
-```bash
-# JSON output with real-time streaming
+# JSON output, streamed to file
 subdigger -d example.com -f json -o results.json
 
-# Enable bruteforce method with depth 4
+# Wordlist + cert transparency + bruteforce, depth 4
 subdigger -d example.com -m wordlist,cert,bruteforce --bruteforce-depth 4
 
 # Custom wordlist (disables auto-discovery)
 subdigger -d example.com -w /path/to/custom-wordlist.txt
 
-# Quiet mode for piping to other tools
+# Quiet mode, piped into another tool
 subdigger -d example.com -q | grep -i admin
 
-# Disable caching for fresh results
-subdigger -d example.com --no-cache
-
-# High-performance scan with all methods
+# Everything, high thread count
 subdigger -d example.com -m wordlist,cert,bruteforce,dns,api -t 280
 ```
 
 ## Configuration
 
-Configuration file: `~/.subdigger/config`
+Lives at `~/.subdigger/config`:
 
 ```ini
 [general]
@@ -127,65 +133,60 @@ whoisxmlapi_key =
 zoomeye_key =
 ```
 
-## Discovery Methods
+## Discovery methods
 
-- **wordlist**: Enumerate subdomains using wordlist files (14 included, auto-discovery enabled)
-- **cert**: Query certificate transparency logs via crt.sh
-- **bruteforce**: Generate and test subdomain permutations (a-z, 0-9, underscore, depth 1-5)
-- **dns**: Attempt DNS zone transfer (AXFR)
-- **api**: Query OSINT APIs (19 sources: BeVigil, BinaryEdge, BufferOver, C99, Censys, CertSpotter, Chaos, FullHunt, GitHub, Hunter, IntelX, LeakIX, Netlas, PassiveTotal, SecurityTrails, Shodan, VirusTotal, WhoisXMLAPI, ZoomEye) - most require API keys in config file
-- **recursive**: Automatically discovers subdomains from CNAME, NS, and ReverseDNS targets
+- **wordlist** — enumerate using bundled or custom wordlist files
+- **cert** — query certificate transparency logs via crt.sh
+- **bruteforce** — generate and test subdomain permutations (a-z, 0-9, `_`, depth 1-5)
+- **dns** — attempt DNS zone transfer (AXFR)
+- **api** — query the 19 supported OSINT APIs (most need a key, see below)
+- **recursive** — auto-discover further subdomains from CNAME, NS and ReverseDNS targets
 
-## API Services
+## API services
 
-SubDigger supports 19 passive subdomain discovery APIs. Configure API keys in `~/.subdigger/config` under the `[apis]` section.
+Configure keys under `[apis]` in `~/.subdigger/config`, then run with `-m api`.
 
-### Free Tier Services (No API Key Required)
-- **BufferOver** - Free passive DNS replication service
+**No key required:** BufferOver (free passive DNS replication).
 
-### API Key Required
-
-| Service | Get API Key | Notes |
-|---------|-------------|-------|
-| **BeVigil** | https://bevigil.com/osint-api | Mobile app security platform |
-| **BinaryEdge** | https://www.binaryedge.io/ | Internet scanning platform |
-| **C99.nl** | https://api.c99.nl/ | Multi-purpose API service |
-| **Censys** | https://search.censys.io/api | Requires both `censys_id` and `censys_secret` |
-| **CertSpotter** | https://sslmate.com/certspotter/api/ | Certificate transparency monitoring |
-| **Chaos** | https://chaos.projectdiscovery.io/ | ProjectDiscovery's subdomain dataset |
-| **FullHunt** | https://fullhunt.io/ | Attack surface management |
-| **GitHub** | https://github.com/settings/tokens | Code search for subdomains |
-| **Hunter** | https://hunter.io/api | Email and domain intelligence |
-| **IntelX** | https://intelx.io/ | Intelligence data search engine |
-| **LeakIX** | https://leakix.net/ | Internet-wide asset discovery |
-| **Netlas** | https://netlas.io/ | Internet assets search |
-| **PassiveTotal** | https://community.riskiq.com/ | Requires both `passivetotal_user` and `passivetotal_key` |
-| **SecurityTrails** | https://securitytrails.com/ | DNS and domain intelligence |
-| **Shodan** | https://account.shodan.io/ | Internet device search engine |
-| **VirusTotal** | https://www.virustotal.com/gui/my-apikey | URL and file analysis |
-| **WhoisXMLAPI** | https://whoisxmlapi.com/ | Domain and IP intelligence |
-| **ZoomEye** | https://www.zoomeye.org/ | Cyberspace search engine |
-
-**Usage:** Add API keys to your config file and use `--methods api` or enable the `api` method in the config.
+| Service | Get a key | Notes |
+|---|---|---|
+| BeVigil | https://bevigil.com/osint-api | Mobile app security platform |
+| BinaryEdge | https://www.binaryedge.io/ | Internet scanning platform |
+| C99.nl | https://api.c99.nl/ | Multi-purpose API service |
+| Censys | https://search.censys.io/api | Needs both `censys_id` and `censys_secret` |
+| CertSpotter | https://sslmate.com/certspotter/api/ | Certificate transparency monitoring |
+| Chaos | https://chaos.projectdiscovery.io/ | ProjectDiscovery's subdomain dataset |
+| FullHunt | https://fullhunt.io/ | Attack surface management |
+| GitHub | https://github.com/settings/tokens | Code search for subdomains |
+| Hunter | https://hunter.io/api | Email and domain intelligence |
+| IntelX | https://intelx.io/ | Intelligence data search engine |
+| LeakIX | https://leakix.net/ | Internet-wide asset discovery |
+| Netlas | https://netlas.io/ | Internet assets search |
+| PassiveTotal | https://community.riskiq.com/ | Needs both `passivetotal_user` and `passivetotal_key` |
+| SecurityTrails | https://securitytrails.com/ | DNS and domain intelligence |
+| Shodan | https://account.shodan.io/ | Internet device search engine |
+| VirusTotal | https://www.virustotal.com/gui/my-apikey | URL and file analysis |
+| WhoisXMLAPI | https://whoisxmlapi.com/ | Domain and IP intelligence |
+| ZoomEye | https://www.zoomeye.org/ | Cyberspace search engine |
 
 ```bash
-# Query all configured APIs
-subdigger -d example.com -m api
-
-# Combine with other methods
-subdigger -d example.com -m wordlist,cert,api
+subdigger -d example.com -m api               # all configured APIs
+subdigger -d example.com -m wordlist,cert,api  # combined with other methods
 ```
 
-## Output Formats
+## Output formats
 
-### CSV (Default)
+<details>
+<summary><strong>CSV</strong> (default)</summary>
 
 ```csv
 Date,Domain,Subdomain,A,AAAA,ReverseDNS,CNAME,CNAME-IP,NS,MX,CAA,TXT,Dangling,TLD,TLD-ISO,TLD-Country,TLD-Type,TLD-Manager,IP-ISO,IP-Country,IP-City,ASN-Org,Source
 2026-02-05T14:23:45Z,example.com,www.example.com,93.184.216.34,,,,,ns1.example.com,,,false,false,com,US,United States,generic,IANA,US,United States,Los Angeles,Example AS,wordlist:common
 ```
+</details>
 
-### JSON
+<details>
+<summary><strong>JSON</strong></summary>
 
 ```json
 {
@@ -218,48 +219,35 @@ Date,Domain,Subdomain,A,AAAA,ReverseDNS,CNAME,CNAME-IP,NS,MX,CAA,TXT,Dangling,TL
   ]
 }
 ```
+</details>
 
 ## Performance
 
-- **140 default threads** (20 per DNS server across 7 servers)
-- **Up to 1400 threads** maximum (200 per DNS server)
-- **Real-time streaming output** - no waiting for scan completion
+- 140 threads by default (20 per DNS server across 7 servers), up to 1400 max
+- Real-time streaming output — no waiting for the scan to finish
 - Asynchronous DNS resolution with c-ares (per-thread DNS channels)
 - Thread-safe task queue and result buffer with mutex protection
 - Automatic deduplication and result caching
-- Per-DNS server health monitoring and automatic failover
+- Per-DNS-server health monitoring with automatic failover
 - 3-second timeout protection with thread respawning
 
-### ⚡ Optimal Performance: Run Your Own DNS Resolver
+### ⚡ Run your own DNS resolver
 
-**For 10x faster performance**, run your own local DNS resolver instead of using public DNS servers.
+Public DNS (8.8.8.8) tops out around ~130 queries/second under rate limiting.
+A local Unbound resolver does ~1200+ queries/second with no limits — zero
+network latency, direct queries to authoritative nameservers, full thread
+utilization. A 350k-subdomain scan drops from 45-60 minutes to **5-8 minutes**.
 
-**Performance Comparison:**
-- Public DNS (8.8.8.8): ~130 queries/second (rate limited)
-- Local Unbound: ~1200+ queries/second (no limits)
-
-**Why it's faster:**
-- Zero network latency (localhost)
-- No rate limiting from public DNS providers
-- Direct queries to authoritative nameservers
-- Maximum thread utilization
-
-**Setup Guide:** See [UNBOUND.md](UNBOUND.md) for a complete installation and configuration guide for running your own Unbound DNS resolver.
-
-**Quick setup:**
 ```bash
-# Install Unbound
 sudo apt-get install unbound
-
-# Configure SubDigger to use it
 echo "servers = 127.0.0.1" >> ~/.subdigger/config
 ```
 
-With local DNS, a 350k subdomain scan takes **5-8 minutes** instead of 45-60 minutes!
+Full setup guide: [UNBOUND.md](UNBOUND.md).
 
 ## Security
 
-- Domain validation (RFC 1035 compliance)
+- RFC 1035 domain validation
 - Input sanitization (alphanumeric + dots + hyphens)
 - Path traversal prevention
 - Configuration file permission checks
@@ -268,28 +256,28 @@ With local DNS, a 350k subdomain scan takes **5-8 minutes** instead of 45-60 min
 
 ## Dependencies
 
-- libc-ares2: Asynchronous DNS resolution
-- libcurl4: HTTP client for API queries
-- libjson-c5: JSON parsing
-- libmaxminddb0: GeoIP database lookups
-- geoipupdate: GeoIP database updater (recommended)
+- `libc-ares2` — asynchronous DNS resolution
+- `libcurl4` — HTTP client for API queries
+- `libjson-c5` — JSON parsing
+- `libmaxminddb0` — GeoIP database lookups
+- `geoipupdate` — GeoIP database updater (recommended)
+
+## Docs
+
+[Implementation](IMPLEMENTATION.md) ·
+[Unbound setup](UNBOUND.md) ·
+[Verification](VERIFICATION.md)
 
 ## Contributing
 
-Contributions are welcome! Please see [GITHUB_INFO.md](GITHUB_INFO.md) for guidelines.
-
-## Issues and Bug Reports
-
-Report issues at: https://github.com/kawaiipantsu/subdigger/issues
+Contributions are welcome — open an issue or a pull request.
 
 ## License
 
-MIT License
+MIT — see [LICENSE](LICENSE).
 
 ## Author
 
 Developed by Kawaiipantsu (thugsred@protonmail.com) for security research and penetration testing.
 
-## Repository
-
-GitHub: https://github.com/kawaiipantsu/subdigger
+<p align="center"><sub><a href="https://github.com/kawaiipantsu/subdigger">github.com/kawaiipantsu/subdigger</a></sub></p>
